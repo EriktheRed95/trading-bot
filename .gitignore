@@ -1,0 +1,9 @@
+# Sensitive data
+secrets.json
+credentials.json
+token.json
+*.enc
+
+# Python temporary files
+__pycache__/
+*.py[cod]
