@@ -1,5 +1,6 @@
 # Sensitive data
 secrets.json
+schwab_keys.json
 credentials.json
 token.json
 *.enc

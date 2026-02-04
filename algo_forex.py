@@ -2,61 +2,50 @@ import pandas as pd
 
 def evaluate_forex_strategy(data):
     """
-    Technical analysis specifically tuned for Forex pairs.
-    Uses RSI for momentum and SMA for trend confirmation.
+    Strategy: Mean Reversion using Bollinger Bands + RSI
     """
-    # Convert data to a Pandas Series for easy math
-    prices = pd.Series([float(d['close']) for d in data])
-    current_price = prices.iloc[-1]
+    df = pd.DataFrame(data)
+    closes = df['close']
+    current_price = closes.iloc[-1]
+
+    # 1. Calculate Indicators
+    # Bollinger Bands (20 SMA, 2 Std Dev)
+    sma_20 = closes.rolling(window=20).mean()
+    std_dev = closes.rolling(window=20).std()
+    upper_band = (sma_20 + (std_dev * 2)).iloc[-1]
+    lower_band = (sma_20 - (std_dev * 2)).iloc[-1]
     
-    # 1. Calculate 14-period SMA
-    sma_period = 14
-    sma = prices.rolling(window=sma_period).mean().iloc[-1]
-    
-    # 2. Calculate RSI (Relative Strength Index)
-    delta = prices.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=sma_period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=sma_period).mean()
-    
-    # Avoid division by zero
+    # RSI
+    delta = closes.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
     rsi = 100 - (100 / (1 + rs.iloc[-1]))
 
     score = 0
     breakdown = []
 
-    # --- RSI LOGIC ---
-    if rsi < 30:
+    # 2. Logic
+    # Buy if price touches Lower Band AND RSI is low (Bounce Up)
+    if current_price <= lower_band:
         score += 3
-        breakdown.append(f"RSI is Oversold ({rsi:.2f}) - Bullish")
-    elif rsi > 70:
+        breakdown.append(f"Price touching Lower Band ({lower_band:.4f})")
+    
+    if current_price >= upper_band:
         score -= 3
-        breakdown.append(f"RSI is Overbought ({rsi:.2f}) - Bearish")
-    else:
-        breakdown.append(f"RSI is Neutral ({rsi:.2f})")
+        breakdown.append(f"Price touching Upper Band ({upper_band:.4f})")
 
-    # --- SMA LOGIC ---
-    if current_price > sma:
+    if rsi < 30:
         score += 2
-        breakdown.append(f"Price is above SMA ({sma:.5f}) - Uptrend")
-    else:
+        breakdown.append(f"RSI Oversold ({rsi:.1f})")
+    elif rsi > 70:
         score -= 2
-        breakdown.append(f"Price is below SMA ({sma:.5f}) - Downtrend")
+        breakdown.append(f"RSI Overbought ({rsi:.1f})")
 
-    # --- DECISION MAPPING ---
-    # We define HOLD as a slight positive/neutral bias 
-    # where we aren't ready to buy fresh, but wouldn't exit yet.
-    if score >= 4:
-        decision = "BUY"
-    elif score <= -4:
-        decision = "SELL"
-    elif -1 <= score <= 2:
-        decision = "HOLD"
-    else:
-        decision = "WAIT"
+    # 3. Decision
+    if score >= 4: decision = "BUY"
+    elif score <= -4: decision = "SELL"
+    elif score > 0: decision = "HOLD" # Bias is up, keep holding
+    else: decision = "WAIT"
 
-    return {
-        "final_score": score,
-        "decision": decision,
-        "breakdown": breakdown
-    }
+    return {"final_score": score, "decision": decision, "breakdown": breakdown}

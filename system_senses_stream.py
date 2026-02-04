@@ -1,58 +1,54 @@
 import yfinance as yf
 import pandas as pd
+import numpy as np
 
-def calculate_rsi(data, window=14):
-    """ Calculates the Relative Strength Index (RSI) manually """
-    delta = data['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-    
+def calculate_rsi(series, period=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
     rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
+    return 100 - (100 / (1 + rs))
 
-def fetch_stock_data(ticker_symbol):
-    print(f"--- SENSES: Fetching history for {ticker_symbol}... ---")
-    
+def fetch_stock_data(ticker):
+    print(f"--- SENSES: Fetching history for {ticker}... ---")
     try:
-        stock = yf.Ticker(ticker_symbol)
-        
-        # 1. Get Basic Info (Fundamentals)
-        info = stock.info
-        current_price = info.get('currentPrice')
-        
-        # 2. Get History (Technical Analysis needs past data)
-        # We need at least 260 days to calculate a 200-day moving average accurately
+        # 1. Fetch History (We need this for SMA, RSI, and fallback price)
+        stock = yf.Ticker(ticker)
+        # Fetch 1 year to ensure we have enough for SMA 200
         hist = stock.history(period="1y")
         
         if hist.empty:
             return None
 
-        # 3. Calculate Indicators
-        # Calculate 50-Day SMA
-        hist['50_SMA'] = hist['Close'].rolling(window=50).mean()
-        # Calculate 200-Day SMA
-        hist['200_SMA'] = hist['Close'].rolling(window=200).mean()
-        # Calculate RSI
-        hist['RSI'] = calculate_rsi(hist)
-
-        # Get the latest values (the last row of the table)
-        latest = hist.iloc[-1]
+        # 2. robust Price Check
+        # Try to get live price first
+        price = stock.info.get('regularMarketPrice') or stock.info.get('currentPrice')
         
+        # FALLBACK: If live price is None (common for Crypto/Forex), use last close
+        if price is None:
+            price = hist['Close'].iloc[-1]
+
+        # 3. Calculate Indicators
+        hist['sma_50'] = hist['Close'].rolling(window=50).mean()
+        hist['sma_200'] = hist['Close'].rolling(window=200).mean()
+        hist['rsi'] = calculate_rsi(hist['Close'])
+
+        # 4. Prepare the Package
+        # We return a DICTIONARY of values
         data = {
-            'symbol': ticker_symbol,
-            'current_price': current_price,
-            'pe_ratio': info.get('forwardPE', None),
-            'sector': info.get('sector', 'Unknown'),
-            
-            # New Technical Data
-            'sma_50': latest['50_SMA'],
-            'sma_200': latest['200_SMA'],
-            'rsi': latest['RSI']
+            'symbol': ticker,
+            'current_price': price,
+            'pe_ratio': stock.info.get('trailingPE'), # Might be None for crypto
+            'sector': stock.info.get('sector', 'Unknown'),
+            'sma_50': hist['sma_50'].iloc[-1],
+            'sma_200': hist['sma_200'].iloc[-1],
+            'rsi': hist['rsi'].iloc[-1],
+            # CRITICAL: We pass the history DataFrame too so the Dashboard can graph it!
+            'history': hist 
         }
         
         return data
 
     except Exception as e:
-        print(f"Error fetching data: {e}")
+        print(f"Error fetching {ticker}: {e}")
         return None
