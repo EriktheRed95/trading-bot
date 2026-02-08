@@ -1,64 +1,88 @@
 import pandas as pd
+import numpy as np
 
-def evaluate_crypto_strategy(data):
-    """
-    Strategy: Momentum Chasing (MACD + RSI) with Whale Guardrails
-    """
-    df = pd.DataFrame(data)
-    closes = df['close']
+# --- HELPER FUNCTIONS (Native Math) ---
+def calculate_rsi(series, period=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).fillna(0)
+    loss = (-delta.where(delta < 0, 0)).fillna(0)
     
-    # 1. Calculate Indicators
-    # MACD (12, 26, 9)
-    exp1 = closes.ewm(span=12, adjust=False).mean()
-    exp2 = closes.ewm(span=26, adjust=False).mean()
-    macd_line = exp1 - exp2
-    signal_line = macd_line.ewm(span=9, adjust=False).mean()
+    # Use exponential moving average (Wilder's method approximation)
+    avg_gain = gain.ewm(alpha=1/period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/period, adjust=False).mean()
     
-    macd_val = macd_line.iloc[-1]
-    signal_val = signal_line.iloc[-1]
-    
-    # RSI
-    delta = closes.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs.iloc[-1]))
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
-    sma_200 = closes.rolling(window=200).mean().iloc[-1]
-    current_price = closes.iloc[-1]
+def calculate_macd(series, fast=12, slow=26, signal=9):
+    k = series.ewm(span=fast, adjust=False).mean()
+    d = series.ewm(span=slow, adjust=False).mean()
+    macd_line = k - d
+    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    return macd_line, signal_line
+
+# --- STRATEGY LOGIC ---
+def evaluate_crypto_strategy(df):
+    """
+    Crypto Logic: High Volatility Protection + Trend Following.
+    Dependency-free version.
+    """
+    # 1. Ensure we have enough data
+    if len(df) < 200:
+        return {
+            "final_score": 0,
+            "breakdown": ["Not enough data (Need 200+ candles)"]
+        }
 
     score = 0
-    breakdown = []
+    reasons = []
+    
+    # Get latest values
+    close = df['close'].iloc[-1]
+    
+    # --- INDICATORS ---
+    # 1. SMA 200 (The Trend Guard)
+    sma200 = df['close'].rolling(window=200).mean().iloc[-1]
 
-    # 2. Logic
-    # A. MACD Crossover (Strong Momentum Signal)
-    if macd_val > signal_val:
-        score += 3
-        breakdown.append(f"MACD Bullish Cross ({macd_val:.2f} > {signal_val:.2f})")
+    # 2. RSI (Native Calculation)
+    rsi_series = calculate_rsi(df['close'])
+    current_rsi = rsi_series.iloc[-1]
+
+    # 3. MACD (Native Calculation)
+    macd_line_series, signal_line_series = calculate_macd(df['close'])
+    macd_line = macd_line_series.iloc[-1]
+    signal_line = signal_line_series.iloc[-1]
+
+    # --- SCORING LOGIC ---
+
+    # A. TREND FILTER (The Crash Protector)
+    # If BTC is below the 200 SMA, it's often a "falling knife".
+    if close < sma200:
+        score -= 10  # Massive penalty. Effectively bans buying.
+        reasons.append(f"BEARISH TREND: Price ${close:.2f} < SMA200 ${sma200:.2f}")
     else:
-        score -= 3
-        breakdown.append("MACD Bearish Trend")
-
-    # B. RSI Filter (Don't buy the top)
-    if rsi > 80:
-        score -= 10 # Hard stop: Too dangerous
-        breakdown.append("RSI Danger Zone (>80)")
-    elif rsi < 30:
         score += 2
-        breakdown.append("RSI Dip Buy Opportunity")
+        reasons.append("BULLISH TREND: Price > SMA200")
 
-    # C. Whale Guardrail (Trend Filter)
-    if current_price > sma_200:
-        score += 1
-        breakdown.append("Above 200 SMA (Bull Market)")
-    else:
-        score -= 2
-        breakdown.append("Below 200 SMA (Bear Market - Be Careful)")
+        # B. RSI Checks
+        if current_rsi < 35:
+            score += 3  # Strong buy signal if trend is UP
+            reasons.append(f"Oversold Dip (RSI {current_rsi:.1f})")
+        elif current_rsi > 75:
+            score -= 2
+            reasons.append(f"Overbought (RSI {current_rsi:.1f})")
+        
+        # C. MACD Checks
+        if macd_line > signal_line:
+            score += 2
+            reasons.append("MACD Bullish Cross")
+        elif macd_line < signal_line:
+            score -= 1
+            reasons.append("MACD Bearish Cross")
 
-    # 3. Decision
-    if score >= 4: decision = "BUY"
-    elif score <= -4: decision = "SELL"
-    elif 0 <= score < 4: decision = "HOLD"
-    else: decision = "WAIT"
-
-    return {"final_score": score, "decision": decision, "breakdown": breakdown}
+    # --- FINAL VERDICT ---
+    return {
+        "final_score": score,
+        "breakdown": reasons
+    }

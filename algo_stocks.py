@@ -1,64 +1,96 @@
 import pandas as pd
+import numpy as np
 
-def evaluate_stock_strategy(data):
-    """
-    Strategy: SMA Trend Following + RSI Momentum + Volume Confirmation
-    """
-    # 1. Prepare Data
-    df = pd.DataFrame(data)
+# --- HELPER FUNCTIONS ---
+def calculate_rsi(series, period=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).fillna(0)
+    loss = (-delta.where(delta < 0, 0)).fillna(0)
+    avg_gain = gain.ewm(alpha=1/period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/period, adjust=False).mean()
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+def calculate_macd(series, fast=12, slow=26, signal=9):
+    k = series.ewm(span=fast, adjust=False).mean()
+    d = series.ewm(span=slow, adjust=False).mean()
+    macd = k - d
+    sig = macd.ewm(span=signal, adjust=False).mean()
+    return macd, sig
+
+def calculate_bbands(series, length=20, std=2):
+    sma = series.rolling(window=length).mean()
+    std_dev = series.rolling(window=length).std()
+    upper = sma + (std * std_dev)
+    lower = sma - (std * std_dev)
+    return upper, lower
+
+# --- STRATEGY LOGIC ---
+def evaluate_stock_strategy(df):
     if len(df) < 200:
-        return {"final_score": 0, "decision": "WAIT", "breakdown": ["Not enough data for SMA 200"]}
-    
-    closes = df['close']
-    volumes = df['volume']
-    current_price = closes.iloc[-1]
-    current_volume = volumes.iloc[-1]
+        return {"final_score": 0, "breakdown": ["Not enough data"]}
 
-    # 2. Calculate Indicators
-    sma_50 = closes.rolling(window=50).mean().iloc[-1]
-    sma_200 = closes.rolling(window=200).mean().iloc[-1]
-    avg_volume = volumes.rolling(window=20).mean().iloc[-1]
-
-    # RSI Calculation
-    delta = closes.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs.iloc[-1]))
-
-    # 3. Logic Evaluation
     score = 0
-    breakdown = []
+    reasons = []
+    
+    close = df['close'].iloc[-1]
+    
+    # --- INDICATORS ---
+    sma50 = df['close'].rolling(window=50).mean().iloc[-1]
+    sma200 = df['close'].rolling(window=200).mean().iloc[-1]
+    
+    rsi_series = calculate_rsi(df['close'])
+    current_rsi = rsi_series.iloc[-1]
+    
+    macd, signal = calculate_macd(df['close'])
+    macd_val = macd.iloc[-1]
+    sig_val = signal.iloc[-1]
 
-    # A. Trend (Golden Cross / Alignment)
-    if current_price > sma_200:
-        score += 2
-        breakdown.append(f"Price > SMA 200 (Bullish Trend)")
-    else:
-        score -= 2
-        breakdown.append(f"Price < SMA 200 (Bearish Trend)")
+    # --- SCORING LOGIC (BALANCED) ---
+    
+    # 1. TREND FILTER
+    in_major_uptrend = close > sma200
 
-    if sma_50 > sma_200:
-        score += 1
-        breakdown.append("Golden Cross Active (SMA 50 > 200)")
-
-    # B. Momentum (RSI)
-    if rsi < 30:
+    if in_major_uptrend:
         score += 3
-        breakdown.append(f"RSI Oversold ({rsi:.1f})")
-    elif rsi > 70:
-        score -= 3
-        breakdown.append(f"RSI Overbought ({rsi:.1f})")
-
-    # C. Volume Confirmation (New)
-    if current_volume > (avg_volume * 1.2):
+        reasons.append("STRONG TREND: Price > SMA200")
+    elif close > sma50:
         score += 1
-        breakdown.append("High Volume detected (Validating move)")
+        reasons.append("RECOVERY: Price > SMA50 (Potential Reversal)")
+    else:
+        score -= 5
+        reasons.append("WEAKNESS: Price < SMA50 & SMA200")
+        
+    # 2. RSI FILTER (Dip OR Momentum)
+    if current_rsi < 35:
+        score += 3
+        reasons.append(f"Deep Value (RSI {current_rsi:.1f})")
+    elif current_rsi < 50:
+        score += 1
+        reasons.append(f"Buy the Dip (RSI {current_rsi:.1f})")
+    elif 50 <= current_rsi <= 70:
+        score += 1  # Reward Momentum
+        reasons.append(f"Momentum Strength (RSI {current_rsi:.1f})")
+    elif current_rsi > 75:
+        score -= 2
+        reasons.append(f"Overbought (RSI {current_rsi:.1f})")
+    
+    # 3. MACD (Confirmation)
+    if macd_val > sig_val:
+        score += 1
+        reasons.append("MACD Bullish")
+    else:
+        score -= 1
+        reasons.append("MACD Bearish")
 
-    # 4. Decision
-    if score >= 4: decision = "BUY"
-    elif score <= -4: decision = "SELL"
-    elif 1 <= score <= 3: decision = "HOLD"
-    else: decision = "WAIT"
+    # --- 🛡️ THE SHORT-SELLING SHIELD ---
+    # If the stock is in a major uptrend, we forbid a negative score.
+    # This prevents us from betting against "Rocket Ships" like NVDA or PLTR.
+    if in_major_uptrend and score < 0:
+        score = 0 
+        reasons.append("🛡️ SHORT BLOCKED: Don't fight the SMA200 Trend!")
 
-    return {"final_score": score, "decision": decision, "breakdown": breakdown}
+    return {
+        "final_score": score,
+        "breakdown": reasons
+    }

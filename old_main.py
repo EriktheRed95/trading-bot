@@ -7,6 +7,7 @@ from senses_macro import fetch_macro_data, analyze_market_regime
 from system_strategy_evaluator import calculate_score
 
 # 3. The Hands 
+# We import these to check the connection, but we won't use execute_trade
 from system_execution_client import get_schwab_client, get_current_positions, execute_trade
 
 # 4. The Black Box
@@ -16,20 +17,21 @@ from journal import log_trade_open
 DRY_RUN = True  # <--- SAFETY LOCK IS ON
 WATCHLIST = ['EURUSD=X', 'GBPUSD=X', 'NVDA', 'AAPL', 'BTC-USD']
 
-# --- EXIT SETTINGS ---
-TAKE_PROFIT_PCT = 0.02  # +2.0% (Base Target)
-STOP_LOSS_PCT = -0.01   # -1.0% (Hard Floor)
+# --- EXIT STRATEGY SETTINGS ---
+TAKE_PROFIT_PCT = 0.02  # +2.0%
+STOP_LOSS_PCT = -0.01   # -1.0%
 
 def run_bot():
-    print(f"Forex & Stock Trading System: DYNAMIC MODE")
+    print(f"Forex & Stock Trading System: SIMULATION MODE")
     print(f"Real Trading: DISABLED")
-    print(f"Base Strategy: TP > {TAKE_PROFIT_PCT*100}% | SL < {STOP_LOSS_PCT*100}%")
+    print(f"Exit Strategy: TP @ {TAKE_PROFIT_PCT*100}% | SL @ {STOP_LOSS_PCT*100}%")
     print("---------------------------------------------")
     
     # A. Wake up the components
     schwab_client = get_schwab_client()
     
-    # Local Memory for Simulation
+    # Local Memory for Simulation (The "Accountant")
+    # Format: {'NVDA': 105.50, 'BTC-USD': 45000.00}
     sim_portfolio = {} 
     
     while True:
@@ -46,16 +48,17 @@ def run_bot():
         else:
             print("[MACRO] Data unavailable. Proceeding with caution.")
 
-        # C. Check Wallet
+        # C. Check Real Wallet (Just for display)
+        if schwab_client:
+            real_holdings = get_current_positions(schwab_client)
+        else:
+            real_holdings = []
+        
         print(f"[PORTFOLIO] Simulated Holdings: {list(sim_portfolio.keys())}")
 
         # D. Analyze Tickers
         for ticker in WATCHLIST:
             print(f"\n[ANALYZING] {ticker}...")
-            
-            # Determine Asset Class
-            is_forex = '=X' in ticker
-            is_volatile = not is_forex # Stocks and Crypto are "Volatile"
             
             # 1. Fetch Price Data
             data = fetch_stock_data(ticker)
@@ -68,58 +71,49 @@ def run_bot():
                 print(" ! Error: Invalid price.")
                 continue
 
-            # 2. Get Technical Score
-            tech_result = calculate_score(data, ticker)
-            tech_score = tech_result['final_score']
-            total_score = tech_score + macro_score
-
-            # --- THE STRATEGIST (Dynamic Exit Logic) ---
+            # --- THE ACCOUNTANT (Profit/Loss Logic) ---
             final_action = "WAIT"
             pnl_pct = 0.0
             
             if ticker in sim_portfolio:
                 entry_price = sim_portfolio[ticker]
                 pnl_pct = (current_price - entry_price) / entry_price
+                
                 print(f" -> P/L: {pnl_pct*100:.2f}% (Entry: ${entry_price:.2f})")
 
-                # 1. STOP LOSS (Always active for safety)
-                if pnl_pct <= STOP_LOSS_PCT:
+                # Check Hard Exits
+                if pnl_pct >= TAKE_PROFIT_PCT:
+                    final_action = "SELL_TP"
+                elif pnl_pct <= STOP_LOSS_PCT:
                     final_action = "SELL_SL"
-                    print(" -> Hit Stop Loss. Exiting.")
-
-                # 2. DYNAMIC TAKE PROFIT (The "Let it Run" Logic)
-                elif pnl_pct >= TAKE_PROFIT_PCT:
-                    if is_forex:
-                        # Forex: Take the money immediately
-                        final_action = "SELL_TP"
-                        print(" -> Forex Target Hit. Taking Profit.")
-                    elif is_volatile:
-                        # Stocks/Crypto: Check Momentum
-                        if total_score >= 4:
-                            final_action = "HOLD_RUNNER"
-                            print(f" -> Target Hit ({pnl_pct*100:.2f}%) but Score is STRONG ({total_score}). Letting it run!")
-                        else:
-                            final_action = "SELL_TP"
-                            print(f" -> Target Hit and Momentum Fading (Score: {total_score}). Securing Bag.")
-
-                # 3. TECHNICAL BREAKDOWN (Protect Unrealized Gains)
-                # If the score drops to SELL (-4), get out even if we haven't hit TP yet.
-                elif total_score <= -4:
-                    final_action = "SELL_SIGNAL"
-                    print(" -> Technical Breakdown detected. Exiting position.")
             
-            else:
-                # We don't own it yet. Should we buy?
+            # --- THE ANALYST (Technical Score Logic) ---
+            # Only run the brain if the Accountant hasn't already decided to sell
+            tech_result = calculate_score(data, ticker)
+            tech_score = tech_result['final_score']
+            total_score = tech_score + macro_score
+            
+            if final_action == "WAIT":
+                # Determine Technical Action
                 if total_score >= 4:
-                    final_action = "BUY"
+                    if ticker not in sim_portfolio:
+                        final_action = "BUY"
+                    else:
+                        final_action = "HOLD" # Already have it
+                elif total_score <= -4:
+                    if ticker in sim_portfolio:
+                        final_action = "SELL_SIGNAL"
+                    else:
+                        final_action = "WAIT" # Don't have it, can't sell
                 elif -2 <= total_score <= 2:
-                    final_action = "WAIT"
+                    final_action = "HOLD"
 
             # --- EXECUTION & LOGGING ---
             if final_action in ["BUY", "SELL_TP", "SELL_SL", "SELL_SIGNAL"]:
                 
                 print(f"!!! SIGNAL GENERATED: {final_action} {ticker} @ ${current_price} (Score: {total_score}) !!!")
                 
+                # SIMULATION LOGIC
                 if "BUY" in final_action:
                     print(f"    [PAPER TRADE] BUY executed. Tracking entry at ${current_price}")
                     sim_portfolio[ticker] = current_price
@@ -129,11 +123,8 @@ def run_bot():
                     print(f"    [PAPER TRADE] SELL executed ({final_action}). Closing position.")
                     if ticker in sim_portfolio:
                         del sim_portfolio[ticker]
+                    # Log the close
                     log_trade_open(ticker, f"SIM_{final_action}", total_score, [f"P/L: {pnl_pct*100:.2f}%"], current_price)
-
-            elif final_action == "HOLD_RUNNER":
-                # Log nothing, just print
-                print(f" -> 🚀 HOLDING RUNNER: {ticker} is up {pnl_pct*100:.2f}% and still strong.")
 
             else:
                 print(f" -> Result: {final_action} (Score: {total_score})")
