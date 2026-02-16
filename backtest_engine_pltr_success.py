@@ -12,15 +12,15 @@ from senses_macro import analyze_market_regime
 
 # --- CONFIGURATION ---
 BATCH_TICKERS = [
-    'NVDA', 'PLTR', 'SMCI', # ROCKETS (Will trade Options)
-    'TSLA', 'RIVN', 'AMD',  # CHAOS (Will trade Options)
-    'F', 'INTC', 'PYPL',    # FALLEN (Stock Only)
-    'KO', 'JPM', 'WMT',     # FORTRESS (Stock Only)
+    'NVDA', 'PLTR', 'SMCI', # ROCKETS
+    'TSLA', 'RIVN', 'AMD',  # CHAOS
+    'F', 'INTC', 'PYPL',    # FALLEN
+    'KO', 'JPM', 'WMT',     # FORTRESS
     'SPY', 'QQQ'            # INDEXES
 ]
 
-# --- GREEKS & MATH ---
 def calculate_adx_proper(df, period=14):
+    """ Standard Wilder's ADX (Verified). """
     df = df.copy()
     df['h-l'] = df['high'] - df['low']
     df['h-pc'] = abs(df['high'] - df['close'].shift(1))
@@ -43,15 +43,10 @@ def calculate_adx_proper(df, period=14):
     adx = dx.ewm(alpha=alpha, adjust=False).mean()
     return adx.fillna(20)
 
-def calculate_gamma_proxy(prices):
-    """
-    Calculates 'Acceleration' of price (Proxy for Gamma).
-    """
-    velocity = prices.diff()
-    acceleration = velocity.diff()
-    return acceleration
-
 def classify_asset(df):
+    """
+    Identifies Stock Type.
+    """
     recent = df.tail(1000)
     avg_adx = recent['adx'].mean()
     daily = df.set_index('Datetime')['close'].resample('D').last().pct_change().dropna()
@@ -61,9 +56,9 @@ def classify_asset(df):
     
     if volatility > 35:
         if avg_adx > 25: 
-            return "ROCKET", stats, 0.80 # 80% Core
+            return "ROCKET", stats, 0.80 # 80% Core (More room for Turbo Scalping)
         else:            
-            return "GRINDER", stats, 0.00 # 0% Core
+            return "GRINDER", stats, 0.00 # 0% Core (Don't bag hold chaos)
     elif volatility > 20:
         return "GRINDER", stats, 0.00 # 0% Core
     else:
@@ -79,10 +74,7 @@ def fetch_historical_data(ticker, period="729d", interval="1h"):
         col = 'Datetime' if 'Datetime' in df.columns else 'Date'
         df.rename(columns={col: 'Datetime'}, inplace=True)
         df['Datetime'] = pd.to_datetime(df['Datetime']).dt.tz_localize(None)
-        
         df['adx'] = calculate_adx_proper(df)
-        df['gamma'] = calculate_gamma_proxy(df['close']) # Add Gamma Proxy
-        
         df_macro = yf.download(['^VIX', '^TNX'], period=period, interval="1d", progress=False)['Close']
         df_macro.reset_index(inplace=True)
         df_macro.rename(columns={'^VIX':'vix','^TNX':'tnx_yield','Date':'Datetime'}, inplace=True)
@@ -98,25 +90,22 @@ def run_smart_backtest(ticker, silent=False):
     
     initial_cash = 10000.00
     start_idx = 200
+    start_price = df.iloc[start_idx]['close']
     
-    # SETUP PORTFOLIO
     core_equity = initial_cash * core_allocation
     sat_equity = initial_cash * (1 - core_allocation)
     
-    # Core is always SHARES (Stock)
-    start_price = df.iloc[start_idx]['close']
     core_shares = core_equity / start_price
-    
     sat_cash = sat_equity
-    sat_units = 0
-    sat_position = "NONE" # NONE, CALL, PUT, STOCK_LONG, STOCK_SHORT
+    sat_shares = 0
+    sat_position = "NONE"
     sat_entry_price = 0.0
     
     trades = 0
     hours_in_market = 0
 
-    # RSI Helper
-    def get_rsi_val(slice):
+    # RSI helper for Turbo Scalping
+    def get_rsi(slice):
         delta = slice.diff()
         gain = delta.clip(lower=0)
         loss = -delta.clip(upper=0)
@@ -128,109 +117,67 @@ def run_smart_backtest(ticker, silent=False):
     for i in range(start_idx + 1, len(df)):
         current_slice = df.iloc[i-200 : i+1]['close']
         price = df.iloc[i]['close']
-        prev_price = df.iloc[i-1]['close']
-        
-        # Calculate Returns for this hour
-        pct_change = (price - prev_price) / prev_price
-        
-        # --- SYNTHETIC OPTIONS LOGIC ---
-        # If we hold options, we apply leverage and decay
-        if sat_position in ["CALL", "PUT"]:
-            # Theta Decay (Time Cost): Approx 0.05% per day -> 0.05/7 = 0.007% per hour open
-            theta_decay = 0.00007 
-            
-            # Leverage (Delta)
-            leverage = 3.0
-            
-            # Update Cash Value of Options
-            # Current Value = Previous Value * (1 + (AssetReturn * Leverage)) - Decay
-            position_val = sat_units # Units here represents current cash value of the option position
-            
-            if sat_position == "CALL":
-                change = (pct_change * leverage) - theta_decay
-            else: # PUT
-                change = (-pct_change * leverage) - theta_decay
-            
-            sat_units = position_val * (1 + change)
-            
-            # Option Blowout Protection (If value drops 90%, it expires worthless)
-            if sat_units < sat_entry_price * 0.10:
-                sat_units = 0
-                sat_position = "NONE"
-                # print(f"💥 OPTION BLOWOUT on {ticker}")
-
         
         sma50 = current_slice.iloc[-50:].mean()
         sma200 = current_slice.mean()
-        rsi_val = get_rsi_val(current_slice).iloc[-1]
-        gamma_val = df.iloc[i]['gamma']
+        rsi_val = get_rsi(current_slice).iloc[-1]
         
         if sat_position != "NONE": hours_in_market += 1
         
         tech_score = calculate_score(df.iloc[i-200 : i+1], ticker)['final_score']
-        total_score = tech_score
+        total_score = tech_score # Simplified for clarity
 
         # --- STRATEGY EXECUTION ---
         
-        # 🚀 ROCKET (TRADES OPTIONS)
+        # 🚀 ROCKET (Turbo Scalper)
         if identity == "ROCKET":
             if sat_position == "NONE":
-                # Buy CALLS if Momentum is strong OR Gamma Squeeze (Acceleration > 0)
-                if total_score >= 3 or (rsi_val < 50 and gamma_val > 0): 
-                    sat_units = sat_cash # Convert cash to Option Value
-                    sat_entry_price = sat_units
+                # Buy Aggressively on Momentum or Dip
+                if total_score >= 3 or rsi_val < 50: 
+                    sat_shares = sat_cash / price
                     sat_cash = 0
-                    sat_position = "CALL"
+                    sat_position = "LONG"
                     trades += 1
-            elif sat_position == "CALL":
-                # Sell Calls if Overbought (>80) or Trend Breaks
-                if rsi_val > 80 or (total_score <= -4 and price < sma50):
-                    sat_cash = sat_units
-                    sat_units = 0
+            elif sat_position == "LONG":
+                # TURBO SCALP: Take profit if Overbought (>75), Re-enter later
+                # OR Panic Exit if Trend Breaks (< SMA50)
+                if rsi_val > 75 or (total_score <= -4 and price < sma50):
+                    sat_cash = sat_shares * price
+                    sat_shares = 0
                     sat_position = "NONE"
                     trades += 1
 
-        # ⚔️ GRINDER (STRICT STOCK TRADING)
+        # ⚔️ GRINDER (0% Core, 100% Active Grim Reaper)
         elif identity == "GRINDER":
             is_death_trend = price < sma200
             
-            # FORD FIX: Raise threshold from 3 to 4.5 to reduce churn
-            entry_threshold = 4.5 
-            
             if sat_position == "NONE":
                 if is_death_trend:
-                    if total_score <= -entry_threshold: 
-                        # Short Stock
-                        sat_units = sat_cash / price # Shares
+                    if total_score <= -2: # Short
+                        sat_shares = sat_cash / price
                         sat_entry_price = price
                         sat_cash = 0
-                        sat_position = "STOCK_SHORT"
+                        sat_position = "SHORT"
                         trades += 1
                 else:
-                    if total_score >= entry_threshold: 
-                        # Buy Stock
-                        sat_units = sat_cash / price # Shares
+                    if total_score >= 3: # Buy
+                        sat_shares = sat_cash / price
                         sat_cash = 0
-                        sat_position = "STOCK_LONG"
+                        sat_position = "LONG"
                         trades += 1
-                        
-            elif sat_position == "STOCK_LONG":
-                # Update Value
-                sat_units_val = sat_units * price 
-                # Wider Exit (-5)
-                if total_score <= -5 or is_death_trend:
-                    sat_cash = sat_units * price
-                    sat_units = 0
+            elif sat_position == "LONG":
+                # WIDER STOP: Exit at -4 (Chill Pill) or Death Trend
+                if total_score <= -4 or is_death_trend:
+                    sat_cash = sat_shares * price
+                    sat_shares = 0
                     sat_position = "NONE"
                     trades += 1
-                    
-            elif sat_position == "STOCK_SHORT":
-                # Update Value for tracking logic (Actual math happens at end)
-                # Wider Exit (+5)
-                if total_score >= 5 or not is_death_trend:
-                    profit = (sat_entry_price - price) * sat_units
-                    sat_cash = (sat_units * sat_entry_price) + profit
-                    sat_units = 0
+            elif sat_position == "SHORT":
+                # WIDER STOP: Cover at +4 (Chill Pill) or Bull Trend
+                if total_score >= 4 or not is_death_trend:
+                    profit = (sat_entry_price - price) * sat_shares
+                    sat_cash = (sat_shares * sat_entry_price) + profit
+                    sat_shares = 0
                     sat_position = "NONE"
                     trades += 1
 
@@ -238,31 +185,23 @@ def run_smart_backtest(ticker, silent=False):
         elif identity == "FORTRESS":
             if sat_position == "NONE":
                 if total_score >= 5: 
-                    sat_units = sat_cash / price
+                    sat_shares = sat_cash / price
                     sat_cash = 0
-                    sat_position = "STOCK_LONG"
+                    sat_position = "LONG"
                     trades += 1
-            elif sat_position == "STOCK_LONG":
+            elif sat_position == "LONG":
                 if total_score <= -2:
-                    sat_cash = sat_units * price
-                    sat_units = 0
+                    sat_cash = sat_shares * price
+                    sat_shares = 0
                     sat_position = "NONE"
                     trades += 1
 
-    # --- FINAL RESULTS ---
+    # --- RESULTS ---
     final_price = df.iloc[-1]['close']
-    
-    # Core Value
     val_core = core_shares * final_price
-    
-    # Satellite Value
     val_sat = sat_cash
-    if sat_position == "CALL" or sat_position == "PUT":
-        val_sat = sat_units # Current Option Value
-    elif sat_position == "STOCK_LONG":
-        val_sat = sat_units * final_price
-    elif sat_position == "STOCK_SHORT":
-        val_sat = (sat_units * sat_entry_price) + ((sat_entry_price - final_price) * sat_units)
+    if sat_position == "LONG": val_sat = sat_shares * final_price
+    elif sat_position == "SHORT": val_sat = (sat_shares * sat_entry_price) + ((sat_entry_price - final_price) * sat_shares)
     
     total_final = val_core + val_sat
     bot_ret = ((total_final - 10000) / 10000) * 100
@@ -277,18 +216,18 @@ def run_smart_backtest(ticker, silent=False):
     }
 
 def run_batch_test():
-    print(f"\n🚀 OPTIONS & GREEKS BATTLE: LEVERAGE ON")
-    print(f"{'TICKER':<6} | {'ID':<8} | {'STATS':<16} | {'BOT %':<7} | {'HOLD %':<7} | {'TRD':<3} | {'WIN'}")
-    print("-" * 80)
+    print(f"\n🚀 ALPHA BATTLE: NO BAGS, TURBO JETS")
+    print(f"{'TICKER':<6} | {'ID':<8} | {'STATS':<16} | {'BOT %':<7} | {'HOLD %':<7} | {'TRD':<3} | {'EXP%':<4} | {'WIN'}")
+    print("-" * 85)
     
     results = []
     for ticker in BATCH_TICKERS:
         res = run_smart_backtest(ticker, silent=True)
         if res:
-            print(f"{res['ticker']:<6} | {res['id']:<8} | {res['stats']:<16} | {res['bot_ret']:>7.0f}% | {res['hold_ret']:>7.0f}% | {res['trades']:>3} | {res['winner']}")
+            print(f"{res['ticker']:<6} | {res['id']:<8} | {res['stats']:<16} | {res['bot_ret']:>7.0f}% | {res['hold_ret']:>7.0f}% | {res['trades']:>3} | {res['exp']:>3.0f}% | {res['winner']}")
             results.append(res)
     
-    print("-" * 80)
+    print("-" * 85)
     wins = sum(1 for r in results if r['winner'] == "BOT")
     print(f"🏆 SCORE: Bot wins {wins}/{len(results)}")
 

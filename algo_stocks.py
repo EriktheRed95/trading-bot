@@ -4,12 +4,21 @@ import numpy as np
 # --- HELPER FUNCTIONS ---
 def calculate_rsi(series, period=14):
     delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).fillna(0)
-    loss = (-delta.where(delta < 0, 0)).fillna(0)
+    
+    # 1. Separate Gains and Losses
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    
+    # 2. Calculate Smoothed Averages (Wilder's Method)
     avg_gain = gain.ewm(alpha=1/period, adjust=False).mean()
     avg_loss = loss.ewm(alpha=1/period, adjust=False).mean()
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
+    
+    # 3. Calculate RS and RSI (Safe Division)
+    # Add a tiny epsilon (1e-9) to avoid Division by Zero errors
+    rs = avg_gain / (avg_loss + 1e-9)
+    rsi = 100 - (100 / (1 + rs))
+    
+    return rsi.fillna(50)
 
 def calculate_macd(series, fast=12, slow=26, signal=9):
     k = series.ewm(span=fast, adjust=False).mean()
@@ -46,49 +55,43 @@ def evaluate_stock_strategy(df):
     macd_val = macd.iloc[-1]
     sig_val = signal.iloc[-1]
 
-    # --- SCORING LOGIC (BALANCED) ---
-    
-    # 1. TREND FILTER
+    # --- SCORING ---
     in_major_uptrend = close > sma200
 
+    # Trend
     if in_major_uptrend:
         score += 3
-        reasons.append("STRONG TREND: Price > SMA200")
+        reasons.append("STRONG TREND")
     elif close > sma50:
         score += 1
-        reasons.append("RECOVERY: Price > SMA50 (Potential Reversal)")
+        reasons.append("RECOVERY")
     else:
         score -= 5
-        reasons.append("WEAKNESS: Price < SMA50 & SMA200")
+        reasons.append("WEAKNESS")
         
-    # 2. RSI FILTER (Dip OR Momentum)
+    # RSI
     if current_rsi < 35:
         score += 3
-        reasons.append(f"Deep Value (RSI {current_rsi:.1f})")
+        reasons.append(f"OVERSOLD ({current_rsi:.0f})")
     elif current_rsi < 50:
         score += 1
-        reasons.append(f"Buy the Dip (RSI {current_rsi:.1f})")
-    elif 50 <= current_rsi <= 70:
-        score += 1  # Reward Momentum
-        reasons.append(f"Momentum Strength (RSI {current_rsi:.1f})")
+        reasons.append(f"DIP ({current_rsi:.0f})")
     elif current_rsi > 75:
         score -= 2
-        reasons.append(f"Overbought (RSI {current_rsi:.1f})")
+        reasons.append(f"OVERBOUGHT ({current_rsi:.0f})")
     
-    # 3. MACD (Confirmation)
+    # MACD
     if macd_val > sig_val:
         score += 1
-        reasons.append("MACD Bullish")
+        reasons.append("MACD BULL")
     else:
         score -= 1
-        reasons.append("MACD Bearish")
+        reasons.append("MACD BEAR")
 
-    # --- 🛡️ THE SHORT-SELLING SHIELD ---
-    # If the stock is in a major uptrend, we forbid a negative score.
-    # This prevents us from betting against "Rocket Ships" like NVDA or PLTR.
+    # SHORT SHIELD
     if in_major_uptrend and score < 0:
         score = 0 
-        reasons.append("🛡️ SHORT BLOCKED: Don't fight the SMA200 Trend!")
+        reasons.append("SHORT BLOCKED")
 
     return {
         "final_score": score,
