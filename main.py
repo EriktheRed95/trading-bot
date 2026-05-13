@@ -6,15 +6,24 @@ from senses_macro import fetch_macro_data, analyze_market_regime
 # 2. The Brain
 from system_strategy_evaluator import calculate_score
 
-# 3. The Hands 
+# 3. The Hands
 from system_execution_client import get_schwab_client, get_current_positions, execute_trade
 
 # 4. The Black Box
 from journal import log_trade_open
 
+# Shared with backtest_engine.py — keeps live and backtest thresholds in sync.
+from strategy_config import THRESHOLDS
+
 # --- CONFIGURATION ---
 DRY_RUN = True  # <--- SAFETY LOCK IS ON
 WATCHLIST = ['EURUSD=X', 'GBPUSD=X', 'NVDA', 'AAPL', 'BTC-USD']
+
+# Live watchlist mixes forex / crypto / stocks, so we use the DEFAULT bucket here.
+# Per-identity thresholds (ROCKET/GRINDER/FORTRESS) are applied by the backtester.
+_LIVE = THRESHOLDS['DEFAULT']
+ENTRY_LONG = _LIVE['entry_long']
+EXIT_LONG = _LIVE['exit_long']
 
 # --- EXIT SETTINGS ---
 TAKE_PROFIT_PCT = 0.02  # +2.0% (Base Target)
@@ -95,7 +104,7 @@ def run_bot():
                         print(" -> Forex Target Hit. Taking Profit.")
                     elif is_volatile:
                         # Stocks/Crypto: Check Momentum
-                        if total_score >= 4:
+                        if total_score >= ENTRY_LONG:
                             final_action = "HOLD_RUNNER"
                             print(f" -> Target Hit ({pnl_pct*100:.2f}%) but Score is STRONG ({total_score}). Letting it run!")
                         else:
@@ -103,14 +112,14 @@ def run_bot():
                             print(f" -> Target Hit and Momentum Fading (Score: {total_score}). Securing Bag.")
 
                 # 3. TECHNICAL BREAKDOWN (Protect Unrealized Gains)
-                # If the score drops to SELL (-4), get out even if we haven't hit TP yet.
-                elif total_score <= -4:
+                # If the score drops to the exit threshold, get out even if we haven't hit TP yet.
+                elif total_score <= EXIT_LONG:
                     final_action = "SELL_SIGNAL"
                     print(" -> Technical Breakdown detected. Exiting position.")
-            
+
             else:
                 # We don't own it yet. Should we buy?
-                if total_score >= 4:
+                if total_score >= ENTRY_LONG:
                     final_action = "BUY"
                 elif -2 <= total_score <= 2:
                     final_action = "WAIT"

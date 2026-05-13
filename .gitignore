@@ -4,6 +4,7 @@ schwab_keys.json
 credentials.json
 token.json
 *.enc
+.journal_salt
 
 # Python temporary files
 __pycache__/

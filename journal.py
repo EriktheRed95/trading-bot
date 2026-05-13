@@ -41,23 +41,50 @@ def authenticate_google():
     return build('drive', 'v3', credentials=creds)
 
 # --- ENCRYPTION LOGIC ---
+SALT_FILE = '.journal_salt'
+_KEY_CACHE = None
+
+
+def _load_or_create_salt():
+    """Salt is generated once on first run and reused thereafter.
+    It's not secret, but it must not change between runs or every entry decrypts to garbage."""
+    if os.path.exists(SALT_FILE):
+        with open(SALT_FILE, 'rb') as f:
+            return f.read()
+    salt = os.urandom(16)
+    with open(SALT_FILE, 'wb') as f:
+        f.write(salt)
+    return salt
+
+
 def get_encryption_key():
-    """
-    Generates the key. 
-    NOTE: For the bot to run automatically 24/7, we cannot ask for a password input.
-    We use a static salt and a hardcoded key (or env variable) for this version.
-    """
-    salt = b'static_salt_for_trading_bot' # In prod, store this in env variables
-    password = b"my_super_secret_bot_password" 
-    
+    """Derives the Fernet key from TRADINGBOT_JOURNAL_KEY (env var) and a local random salt.
+
+    Set TRADINGBOT_JOURNAL_KEY in your shell or .env before running the bot, e.g.:
+        $env:TRADINGBOT_JOURNAL_KEY = "<long random string>"
+    The salt is stored in .journal_salt next to the script (gitignored)."""
+    global _KEY_CACHE
+    if _KEY_CACHE is not None:
+        return _KEY_CACHE
+
+    password = os.environ.get('TRADINGBOT_JOURNAL_KEY')
+    if not password:
+        raise RuntimeError(
+            "TRADINGBOT_JOURNAL_KEY environment variable is not set. "
+            "Generate a strong random value (e.g. `python -c \"import secrets; print(secrets.token_urlsafe(32))\"`) "
+            "and set it in your environment before running the bot."
+        )
+
+    salt = _load_or_create_salt()
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
         salt=salt,
-        iterations=100000,
-        backend=default_backend()
+        iterations=200_000,
+        backend=default_backend(),
     )
-    return base64.urlsafe_b64encode(kdf.derive(password))
+    _KEY_CACHE = base64.urlsafe_b64encode(kdf.derive(password.encode('utf-8')))
+    return _KEY_CACHE
 
 # --- CORE IO FUNCTIONS ---
 def load_journal(service):
