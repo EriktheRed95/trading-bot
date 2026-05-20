@@ -8,6 +8,79 @@ Built in Python around a clean four-layer architecture, with a Streamlit dashboa
 
 ---
 
+## 📊 Results (honest backtest)
+
+The same classify → route → macro-filter core runs in **two timeframe profiles**. They share one engine but operate on different bar cadences and horizons, which changes both the asset classifications and the trade frequency enough that they behave like two distinct strategies. Both apply **slippage + commission on every fill** and have **no look-ahead bias**. Reproduce with `python plot_results.py` and `python plot_results.py --long`.
+
+### Comparison at a glance
+
+| | **Strategy A — Tactical** | **Strategy B — Positional** |
+|---|---|---|
+| Bars / horizon | Hourly, ~729 days | Daily, up to 10 years |
+| Option decay | per-hour | per-day (24×) |
+| Warm-up | 1000 bars (~6 wks) | 250 bars (~1 yr) |
+| **Beats buy-and-hold** | **2 of 14** | **0 of 14** |
+| Median spread vs hold | −16% | −31% |
+| Worst case | NVDA −298% | TSLA −1934% |
+
+**The headline across both is a negative result — and that's the honest one.** The longer the horizon, the *worse* the active overlay does, because it's a persistent cost-and-timing drag with no compensating edge in a bull market. A naive backtest (look-ahead classification, zero costs) would have hidden this entirely.
+
+### Strategy A — Tactical (hourly, ~2 years)
+
+![Strategy A: hourly bot vs buy-and-hold](results.png)
+
+Wins on 2/14 (PLTR, KO). Raw numbers in [`results.csv`](results.csv).
+
+| Ticker | Class | Bot | Buy & Hold | Δ vs hold | Trades |
+|--------|-------|----:|-----------:|----------:|-------:|
+| **PLTR** | 🚀 Rocket | **+802%** | +728% | **+74%** | 355 |
+| AMD | 🚀 Rocket | +118% | +151% | −33% | 493 |
+| TSLA | 🚀 Rocket | +56% | +92% | −36% | 541 |
+| RIVN | 🚀 Rocket | −33% | −17% | −16% | 457 |
+| SMCI | 🚀 Rocket | −39% | −24% | −15% | 549 |
+| INTC | ⚔️ Grinder | +35% | +136% | −101% | 149 |
+| NVDA | ⚔️ Grinder | −17% | +281% | −298% | 197 |
+| F | ⚔️ Grinder | −61% | +19% | −80% | 209 |
+| PYPL | ⚔️ Grinder | −60% | −32% | −28% | 167 |
+| WMT | 🛡️ Fortress | +148% | +149% | −1% | 59 |
+| JPM | 🛡️ Fortress | +71% | +76% | −4% | 58 |
+| QQQ | 🛡️ Fortress | +66% | +69% | −2% | 57 |
+| SPY | 🛡️ Fortress | +52% | +54% | −1% | 57 |
+| **KO** | 🛡️ Fortress | **+39%** | +37% | **+2%** | 59 |
+
+### Strategy B — Positional (daily, up to 10 years)
+
+![Strategy B: daily bot vs buy-and-hold](results_10y.png)
+
+Wins on 0/14. Note the longer daily window **reclassifies** several names (e.g. NVDA reads as a Rocket, not a Grinder) and uses each ticker's full available history, so windows differ — PLTR/RIVN are younger than 10y. Raw numbers in [`results_10y.csv`](results_10y.csv).
+
+| Ticker | Class | Bot | Buy & Hold | Δ vs hold | Trades | Since |
+|--------|-------|----:|-----------:|----------:|-------:|-------|
+| NVDA | 🚀 Rocket | +5400% | +6756% | −1356% | 361 | 2017 |
+| SMCI | 🚀 Rocket | +1021% | +1303% | −281% | 380 | 2017 |
+| AMD | 🚀 Rocket | +3059% | +3840% | −781% | 439 | 2017 |
+| PLTR | 🚀 Rocket | +331% | +436% | −105% | 265 | 2021 |
+| TSLA | ⚔️ Grinder | **−64%** | **+1870%** | **−1934%** | 311 | 2017 |
+| RIVN | ⚔️ Grinder | −83% | −59% | −24% | 119 | 2022 |
+| F | 🛡️ Fortress | +81% | +96% | −15% | 223 | 2017 |
+| INTC | 🛡️ Fortress | +273% | +304% | −31% | 213 | 2017 |
+| PYPL | 🛡️ Fortress | −14% | −11% | −3% | 202 | 2017 |
+| KO | 🛡️ Fortress | +143% | +148% | −5% | 227 | 2017 |
+| JPM | 🛡️ Fortress | +322% | +354% | −32% | 237 | 2017 |
+| WMT | 🛡️ Fortress | +463% | +491% | −28% | 227 | 2017 |
+| SPY | 🛡️ Fortress | +237% | +259% | −22% | 241 | 2017 |
+| QQQ | 🛡️ Fortress | +411% | +448% | −37% | 239 | 2017 |
+
+### What both runs tell us
+
+- **The active overlay is a permanent tax, and taxes compound.** 🛡️ Fortress names (90% buy-and-hold) track the index but always land a few points *behind* — the active 10% sleeve plus costs never helps. Over 10 years that small drag compounds into a wider gap.
+- **The 100%-active ⚔️ Grinder sleeve is a time bomb in a bull market.** With no buy-and-hold anchor, the bot is free to short or sit out compounding winners. Holding TSLA returned +1870%; trading it returned −64%. Betting against a stock that goes up 19× is financially fatal.
+- **The conclusion is robust, not a modeling quirk.** The Fortress and Grinder names trade plain stock with no options at all, and they *still* underperform — so the gap is real strategy behavior, not an artifact of the approximate synthetic-options model.
+
+The point of this project was never "I built a money printer." It was building a backtester I can *trust* — see *Engineering decisions* below for the look-ahead and cost bugs I had to remove before these numbers meant anything. The honest finding: **in a sustained bull market, a mean-reversion overlay loses to buy-and-hold, and loses worse the longer it runs.**
+
+---
+
 ## 🎯 The problem this solves
 
 Most retail "trading bot" projects pick one strategy (trend-following or mean-reversion) and apply it to every ticker. That works for the subset of stocks that match the strategy, and silently loses money on the rest. A high-volatility momentum stock like NVDA needs different treatment than a choppy laggard like F, which needs different treatment than a low-vol blue chip like JPM.

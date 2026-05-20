@@ -1,0 +1,20 @@
+# Core data + backtesting
+numpy>=1.26
+pandas>=2.1
+yfinance>=0.2.40
+
+# Dashboard
+streamlit>=1.36
+plotly>=5.22
+
+# Results chart (plot_results.py)
+matplotlib>=3.8
+
+# Encrypted trade journal synced to Google Drive
+cryptography>=42.0
+google-auth>=2.30
+google-auth-oauthlib>=1.2
+google-api-python-client>=2.130
+
+# Live execution via Charles Schwab (only needed when DRY_RUN=False)
+schwab-py>=1.3

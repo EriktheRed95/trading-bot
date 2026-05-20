@@ -121,14 +121,15 @@ def _rsi_last(series, period=14):
     return (100 - (100 / (1 + rs))).iloc[-1]
 
 
-def run_smart_backtest(ticker, silent=False):
-    df = fetch_historical_data(ticker)
-    if df is None or len(df) <= WARMUP_BARS + 1:
+def run_smart_backtest(ticker, silent=False, period="729d", interval="1h",
+                       warmup_bars=WARMUP_BARS, theta_per_bar=OPTION_THETA_PER_HOUR):
+    df = fetch_historical_data(ticker, period=period, interval=interval)
+    if df is None or len(df) <= warmup_bars + 1:
         return None
 
     # Classify using ONLY the warm-up window — no future data leakage.
-    start_idx = WARMUP_BARS
-    identity, stats, core_allocation = classify_asset_at(df, start_idx)
+    start_idx = warmup_bars
+    identity, stats, core_allocation = classify_asset_at(df, start_idx, lookback_bars=warmup_bars)
 
     initial_cash = 10_000.00
     core_equity = initial_cash * core_allocation
@@ -157,9 +158,9 @@ def run_smart_backtest(ticker, silent=False):
         # Mark-to-market open synthetic options first (so we can detect blow-outs).
         if sat_position in ("CALL", "PUT"):
             if sat_position == "CALL":
-                change = (pct_change * OPTION_LEVERAGE) - OPTION_THETA_PER_HOUR
+                change = (pct_change * OPTION_LEVERAGE) - theta_per_bar
             else:
-                change = (-pct_change * OPTION_LEVERAGE) - OPTION_THETA_PER_HOUR
+                change = (-pct_change * OPTION_LEVERAGE) - theta_per_bar
             sat_units = sat_units * (1 + change)
             if sat_units < sat_entry_price * OPTION_BLOWOUT_THRESHOLD:
                 sat_units = 0.0
@@ -273,6 +274,8 @@ def run_smart_backtest(ticker, silent=False):
         'bot_ret': bot_ret, 'hold_ret': hold_ret,
         'trades': trades, 'exp': exposure_pct,
         'winner': "BOT" if bot_ret > hold_ret else "HOLD",
+        'bars': len(df) - start_idx,
+        'start_date': str(df.iloc[start_idx]['Datetime'])[:10],
     }
 
 
