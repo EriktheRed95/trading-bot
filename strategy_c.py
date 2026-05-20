@@ -143,6 +143,164 @@ def run_allocator(close, holdable, top_n=10, sma_window=200, mom_lookback=252,
     return equity, stats, weights
 
 
+# Sector map for the broad pool (used by the optional sector cap).
+SECTORS = {}
+for _grp, _names in {
+    'tech': ['AAPL', 'MSFT', 'NVDA', 'AMD', 'INTC', 'AVGO', 'QCOM', 'TXN', 'MU',
+             'AMAT', 'ADI', 'LRCX', 'ORCL', 'CRM', 'ADBE', 'CSCO', 'IBM'],
+    'internet': ['GOOGL', 'META', 'AMZN', 'NFLX', 'UBER'],
+    'comm': ['T', 'VZ', 'CMCSA', 'DIS'],
+    'consumer': ['KO', 'PEP', 'PG', 'WMT', 'COST', 'MCD', 'NKE', 'SBUX', 'HD', 'LOW', 'TGT'],
+    'financials': ['JPM', 'BAC', 'WFC', 'C', 'GS', 'MS', 'AXP', 'BRK-B'],
+    'health': ['JNJ', 'PFE', 'MRK', 'ABT', 'UNH', 'LLY', 'ABBV', 'AMGN', 'GILD', 'BMY'],
+    'industrial_energy': ['GE', 'CAT', 'BA', 'HON', 'XOM', 'CVX', 'UNP'],
+    'auto': ['TSLA', 'F', 'GM'],
+}.items():
+    for _t in _names:
+        SECTORS[_t] = _grp
+
+
+def _apply_caps(weights, max_weight=None, sector_map=None, sector_cap=None):
+    """Cap individual (and optionally per-sector) weights. Excess that can't be
+    redistributed under the caps stays in cash (sum may fall below 1)."""
+    w = dict(weights)
+    if max_weight:
+        for _ in range(50):
+            over = {t: v for t, v in w.items() if v > max_weight + 1e-9}
+            if not over:
+                break
+            excess = sum(v - max_weight for v in over.values())
+            for t in over:
+                w[t] = max_weight
+            under = [t for t in w if w[t] < max_weight - 1e-9]
+            pool = sum(w[t] for t in under)
+            if not under or pool <= 0:
+                break
+            for t in under:
+                w[t] += excess * (w[t] / pool)
+    if sector_map and sector_cap:
+        sec_tot = {}
+        for t, v in w.items():
+            sec_tot[sector_map.get(t, '?')] = sec_tot.get(sector_map.get(t, '?'), 0) + v
+        for s, tot in sec_tot.items():
+            if tot > sector_cap + 1e-9:
+                scale = sector_cap / tot
+                for t in [x for x in w if sector_map.get(x, '?') == s]:
+                    w[t] *= scale          # trimmed sector weight -> remainder cash
+    return w
+
+
+def run_with_overlay(close, holdable, top_n=10, sma_window=200, mom_lookback=252,
+                     mom_skip=21, mom_mid=126, vol_lookback=63, risk_off='dynamic',
+                     risk_off_candidates=('GLD', 'TLT'), holdable_fn=None,
+                     max_weight=None, trailing_stop=None, sector_map=None, sector_cap=None,
+                     stop_below_sma=False, require_both=False):
+    """Daily holdings simulation with a name-level risk overlay:
+    intra-month stop + per-name / per-sector position caps.
+
+    Stop options (applied only to equity holdings, intra-month):
+      trailing_stop   -> exit if drawdown from peak exceeds this (magnitude)
+      stop_below_sma  -> exit if price falls below its own 200d SMA (trend break)
+      require_both    -> with both set, only exit when BOTH fire (disaster-only:
+                         a confirmed downtrend AND a big drawdown, so normal
+                         pullbacks in healthy uptrends are ignored)
+    Overlay params default off -> a plain monthly-rebalanced baseline.
+    Returns (equity Series, stats dict)."""
+    close = close.sort_index().ffill()
+    rets = close.pct_change().fillna(0.0)
+    sma = close.rolling(sma_window).mean()
+    mom_long = close.shift(mom_skip) / close.shift(mom_lookback) - 1.0
+    mom_mid_s = close.shift(mom_skip) / close.shift(mom_mid) - 1.0
+    trend = close / sma - 1.0
+    vol = rets.rolling(vol_lookback).std() * np.sqrt(252)
+    mkt = close[MARKET].values
+    mkt_sma = close[MARKET].rolling(sma_window).mean().values
+
+    holdable = [t for t in holdable if t in close.columns]
+    dynamic = (risk_off == 'dynamic')
+    if dynamic:
+        riskoff_cols = [t for t in risk_off_candidates if t in close.columns]
+    elif isinstance(risk_off, dict):
+        riskoff_cols = [t for t in risk_off if t in close.columns]
+    else:
+        riskoff_cols = []
+
+    cols = set(holdable + riskoff_cols)
+    CL = {t: close[t].values for t in cols}
+    SM = {t: sma[t].values for t in cols}
+    ML = {t: mom_long[t].values for t in holdable}
+    MM = {t: mom_mid_s[t].values for t in holdable}
+    TR = {t: trend[t].values for t in holdable}
+    VL = {t: vol[t].values for t in holdable}
+    RV = {t: rets[t].values for t in cols}
+
+    dates = close.index
+    rb_set = set(close.groupby(close.index.to_period('M')).tail(1).index)
+
+    def _z(a):
+        sd = a.std()
+        return (a - a.mean()) / sd if sd else a * 0.0
+
+    def target(i, d):
+        if mkt[i] > mkt_sma[i]:                       # risk-on
+            today = holdable_fn(d) if holdable_fn else holdable
+            elig = [t for t in today if t in CL
+                    and CL[t][i] > SM[t][i] and ML[t][i] > 0
+                    and not np.isnan(VL[t][i]) and VL[t][i] > 0]
+            if elig:
+                comp = (_z(np.array([ML[t][i] for t in elig]))
+                        + _z(np.array([MM[t][i] for t in elig]))
+                        + _z(np.array([TR[t][i] for t in elig])))
+                order = np.argsort(comp)[::-1][:top_n]
+                picks = [elig[j] for j in order]
+                inv = np.array([1.0 / VL[t][i] for t in picks])
+                w = dict(zip(picks, inv / inv.sum()))
+                return _apply_caps(w, max_weight, sector_map, sector_cap)
+        if dynamic:
+            up = [c for c in riskoff_cols if not np.isnan(CL[c][i]) and CL[c][i] > SM[c][i]]
+            return {c: 1.0 / len(up) for c in up} if up else {}
+        if isinstance(risk_off, dict):
+            return {t: wt for t, wt in risk_off.items()
+                    if t in CL and not np.isnan(CL[t][i])}
+        return {}
+
+    holdable_set = set(holdable)
+    stop_on = bool(trailing_stop) or stop_below_sma
+    cash, pos, peak = 10_000.0, {}, {}
+    equity = np.empty(len(dates))
+    turns = []
+    for i, d in enumerate(dates):
+        for t in list(pos):                            # mark to market
+            pos[t] *= (1 + RV[t][i])
+            if pos[t] > peak[t]:
+                peak[t] = pos[t]
+        if stop_on:                                    # intra-month stop (equity only)
+            for t in list(pos):
+                if t not in holdable_set:
+                    continue
+                dd_hit = bool(trailing_stop) and pos[t] <= peak[t] * (1 - trailing_stop)
+                sma_hit = stop_below_sma and CL[t][i] < SM[t][i]
+                fire = (dd_hit and sma_hit) if require_both else (dd_hit or sma_hit)
+                if fire:
+                    cash += pos.pop(t)
+                    peak.pop(t)
+        if d in rb_set:                                # monthly rebalance
+            total = cash + sum(pos.values())
+            tgt = target(i, d)
+            new_pos = {t: w * total for t, w in tgt.items() if w > 1e-9}
+            turn = sum(abs(new_pos.get(t, 0) - pos.get(t, 0))
+                       for t in set(new_pos) | set(pos))
+            turns.append(turn / total if total else 0)
+            cost = turn * COST_PER_SIDE
+            pos, peak = new_pos, dict(new_pos)
+            cash = total - sum(pos.values()) - cost
+        equity[i] = cash + sum(pos.values())
+
+    eq = pd.Series(equity, index=dates)
+    stats = {'avg_turnover': float(np.mean(turns) if turns else 0.0)}
+    return eq, stats
+
+
 def ew_index(close, universe):
     """Equal-weight, daily-rebalanced index of the universe (survivorship-fair
     benchmark: did the strategy's timing/selection beat just holding the basket?)."""

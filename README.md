@@ -123,6 +123,16 @@ The point-in-time run reconstructs *who was in the index on each date* (from Wik
 
 **The robust, bias-proof takeaway:** across every universe, Strategy C delivers **Sharpe ~1.1–1.25 vs SPY's 0.64** and **drawdowns of −26% to −35% vs SPY's −55%.** That edge comes from the regime gate, which is universe-independent. The honest headline isn't "huge returns" — it's **roughly half the drawdown at nearly double the Sharpe.**
 
+### Can it survive gap-down deaths? (a risk-overlay study)
+
+Sudden collapses (Lehman, fraud reveals, bank runs) are where portfolios die. I stress-tested this three ways:
+
+- **Exit timing on real crashers** ([`demo_exits.py`](demo_exits.py)) — on 2000/2008/2022 big-crashers, a trend exit caps the loss at **−15% to −25%** vs **−84%** holding to the trough (Citigroup: 200-day exit at −6%, vs −98% held). Direct evidence the delisted names *would have been cut, not ridden to zero*.
+- **Synthetic gap shocks** ([`stress_gaps.py`](stress_gaps.py)) — for overnight gaps no indicator can predict, diversification barely changes median return but cuts worst-case drawdown from **−77% (top 3) to −31% (top 20)**. Position sizing is the only defense.
+- **Explicit stop/cap overlay** ([`run_overlay.py`](run_overlay.py), [`run_overlay_smart.py`](run_overlay_smart.py)) — adding trailing stops and position caps **did not beat the baseline.** A naive 20% trailing stop *worsened* drawdown (whipsaw + V-recoveries); a disaster-only stop (200d-break AND −35%) was a no-op.
+
+**Verdict:** the baseline's three layers — market regime gate + per-name 200-day trend filter + diversified inverse-vol sizing — *already* handle both slow deaths (trend exit) and instant gaps (sizing). An extra stop is redundant with the first two and powerless against the third. **The strategy isn't missing a safety layer; it is one.**
+
 ---
 
 ## 📰 Bot 2 — news, sentiment & industry linkage (in progress)
