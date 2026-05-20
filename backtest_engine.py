@@ -7,6 +7,7 @@ import yfinance as yf
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 from indicators import calculate_adx
+from metrics import compute_metrics
 from senses_macro import analyze_market_regime
 from strategy_config import (
     COMMISSION_BPS,
@@ -122,7 +123,8 @@ def _rsi_last(series, period=14):
 
 
 def run_smart_backtest(ticker, silent=False, period="729d", interval="1h",
-                       warmup_bars=WARMUP_BARS, theta_per_bar=OPTION_THETA_PER_HOUR):
+                       warmup_bars=WARMUP_BARS, theta_per_bar=OPTION_THETA_PER_HOUR,
+                       return_curves=False):
     df = fetch_historical_data(ticker, period=period, interval=interval)
     if df is None or len(df) <= warmup_bars + 1:
         return None
@@ -146,6 +148,19 @@ def run_smart_backtest(ticker, silent=False, period="729d", interval="1h",
 
     trades = 0
     hours_in_market = 0
+
+    def _sat_value(p):
+        """Mark-to-market value of the satellite sleeve at price p."""
+        if sat_position in ("CALL", "PUT"):
+            return sat_units
+        if sat_position == "STOCK_LONG":
+            return sat_units * p
+        if sat_position == "STOCK_SHORT":
+            return sat_units * sat_entry_price + (sat_entry_price - p) * sat_units
+        return sat_cash
+
+    # Per-bar equity curves for the bot and the buy-and-hold benchmark.
+    times, bot_equity, hold_equity = [], [], []
 
     th = THRESHOLDS.get(identity, THRESHOLDS['DEFAULT'])
 
@@ -251,32 +266,40 @@ def run_smart_backtest(ticker, silent=False, period="729d", interval="1h",
                     sat_position = "NONE"
                     trades += 1
 
+        # Record this bar's mark-to-market equity (after any trades).
+        times.append(df.iloc[i]['Datetime'])
+        bot_equity.append(core_shares * price + _sat_value(price))
+        hold_equity.append(initial_cash * price / start_price)
+
     # Mark to market.
     final_price = df.iloc[-1]['close']
-    val_core = core_shares * final_price
-
-    if sat_position in ("CALL", "PUT"):
-        val_sat = sat_units
-    elif sat_position == "STOCK_LONG":
-        val_sat = sat_units * final_price
-    elif sat_position == "STOCK_SHORT":
-        val_sat = sat_units * sat_entry_price + (sat_entry_price - final_price) * sat_units
-    else:
-        val_sat = sat_cash
-
-    total_final = val_core + val_sat
+    total_final = core_shares * final_price + _sat_value(final_price)
     bot_ret = ((total_final - initial_cash) / initial_cash) * 100
     hold_ret = ((final_price - start_price) / start_price) * 100
     exposure_pct = (hours_in_market / (len(df) - start_idx)) * 100
 
-    return {
+    idx = pd.DatetimeIndex(times)
+    bot_curve = pd.Series(bot_equity, index=idx)
+    hold_curve = pd.Series(hold_equity, index=idx)
+    bm = compute_metrics(bot_curve)
+    hm = compute_metrics(hold_curve)
+
+    result = {
         'ticker': ticker, 'id': identity, 'stats': stats,
         'bot_ret': bot_ret, 'hold_ret': hold_ret,
         'trades': trades, 'exp': exposure_pct,
         'winner': "BOT" if bot_ret > hold_ret else "HOLD",
         'bars': len(df) - start_idx,
         'start_date': str(df.iloc[start_idx]['Datetime'])[:10],
+        'sharpe': bm['sharpe'], 'max_dd': bm['max_drawdown'], 'cagr': bm['cagr'],
+        'ann_vol': bm['ann_vol'], 'calmar': bm['calmar'],
+        'hold_sharpe': hm['sharpe'], 'hold_max_dd': hm['max_drawdown'],
+        'hold_cagr': hm['cagr'],
     }
+    if return_curves:
+        result['bot_curve'] = bot_curve
+        result['hold_curve'] = hold_curve
+    return result
 
 
 def run_batch_test():
