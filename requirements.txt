@@ -7,8 +7,11 @@ yfinance>=0.2.40
 streamlit>=1.36
 plotly>=5.22
 
-# Results chart (plot_results.py)
+# Results charts + equity curves (plot_results.py, plot_equity.py)
 matplotlib>=3.8
+
+# Bot 2 — news/sentiment scoring (news_sentiment.py)
+vaderSentiment>=3.3
 
 # Encrypted trade journal synced to Google Drive
 cryptography>=42.0
