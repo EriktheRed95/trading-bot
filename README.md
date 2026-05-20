@@ -143,7 +143,18 @@ A second, complementary system that feeds *ideas* to the systematic core rather 
 - **`industry_map.py`** — thematic baskets + data-driven correlation peers ("who benefits from the SpaceX IPO?").
 - **`live_picks.py`** — wires sentiment into Strategy C's live ranking as a modest tilt (the trend signal dominates; sentiment breaks ties).
 
-**Honest status:** Bot 2 is a *live* signal, not yet backtestable — free news is recent-only, and an honest sentiment backtest needs point-in-time historical news (a paid dataset). Treat it as a tilt on the proven systematic core until validated.
+### Does the sentiment tilt actually work? (backtested on FNSPID)
+
+I distilled the free [FNSPID](https://huggingface.co/datasets/Zihan1004/FNSPID) news dataset (23 GB streamed → a 13 MB monthly sentiment panel via [`fnspid_sentiment.py`](fnspid_sentiment.py)) and A/B-tested the tilt with three increasingly hard checks:
+
+| Test | Question | Result |
+|---|---|---|
+| Megacap A/B | Does the tilt help on the curated pool? | Looked great — Sharpe 1.04 → 1.15, CAGR 20.4% → 21.5% |
+| **Broad point-in-time universe** | Is it a size/mega-cap proxy? | **Return edge collapses** — CAGR 16.5% → 15.6%; only a small drawdown gain (−33% → −28%) survives |
+| **Orthogonalize vs momentum** | Is it a momentum proxy? | **No** — the residual carries the full effect; it's momentum-independent info |
+| Sub-period | Where does it help? | Regime-dependent: strong in 2013–19, helped the 2022 bear, *hurt* in frothy 2021 |
+
+**Honest verdict:** the news-sentiment signal is *real* (not a momentum echo) but **weak and universe-dependent** — the exciting return boost was an artifact of a curated mega-cap pool and evaporates on the honest broad universe. What survives is a *minor* risk/drawdown improvement. So it's a small risk-tilt at most, **not an alpha source.** The lesson is the process: the megacap A/B alone would have oversold it; the broad-universe test dismantled the story.
 
 ---
 

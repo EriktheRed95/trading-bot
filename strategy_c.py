@@ -69,7 +69,8 @@ def _zscore(s):
 
 def run_allocator(close, holdable, top_n=10, sma_window=200, mom_lookback=252,
                   mom_skip=21, mom_mid=126, vol_lookback=63, risk_off=None,
-                  risk_off_candidates=('GLD', 'TLT'), holdable_fn=None):
+                  risk_off_candidates=('GLD', 'TLT'), holdable_fn=None,
+                  sentiment_df=None, sentiment_weight=0.0, orthogonalize=False):
     """Simulate the allocator. risk_off is one of:
         None            -> sit in cash when defensive
         {ticker: wt}    -> fixed sleeve (e.g. {'GLD':0.5,'TLT':0.5})
@@ -114,6 +115,22 @@ def run_allocator(close, holdable, top_n=10, sma_window=200, mom_lookback=252,
                 comp = (_zscore(mom_long.loc[d, elig])
                         + _zscore(mom_mid_s.loc[d, elig])
                         + _zscore(trend.loc[d, elig]))
+                if sentiment_df is not None and sentiment_weight:
+                    # Use the PREVIOUS completed month's sentiment (no look-ahead).
+                    pm = str(d.to_period('M') - 1)
+                    srow = sentiment_df.loc[pm] if pm in sentiment_df.index else None
+                    svec = pd.Series(
+                        [srow.get(t, 0.0) if srow is not None else 0.0 for t in elig],
+                        index=elig).fillna(0.0)
+                    sz = _zscore(svec)
+                    if orthogonalize:
+                        # Residualize sentiment against the momentum/trend score:
+                        # only the part NOT explained by momentum tilts the rank.
+                        cz = _zscore(comp)
+                        denom = float((cz * cz).sum())
+                        beta = float((sz * cz).sum()) / denom if denom else 0.0
+                        sz = sz - beta * cz
+                    comp = comp + sentiment_weight * sz
                 picks = comp.sort_values(ascending=False).head(top_n).index
                 inv = 1.0 / vol.loc[d, picks]
                 target.loc[picks] = (inv / inv.sum()).values
