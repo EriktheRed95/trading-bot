@@ -81,6 +81,62 @@ The point of this project was never "I built a money printer." It was building a
 
 ---
 
+## 🟢 Strategy C — the version that actually wins
+
+If mean-reversion fights the trend, **do the opposite.** Strategy C (`strategy_c.py`) is long-only, trend-following, and regime-gated — it holds by default and only sits out when the regime turns. One ranking brain combines every signal:
+
+1. **Market regime gate** — leave equities when SPY is below its 200-day SMA.
+2. **Per-name trend filter** — a name is eligible only if it's above its own 200-day SMA *and* has positive 12-1 month momentum.
+3. **Ranking brain** — eligible names scored by a z-blend of 12-1 momentum, 6-1 momentum, and trend strength.
+4. **Top-N selection** + **inverse-volatility sizing** (each holding contributes ~equal risk).
+5. **Dynamic risk-off sleeve** — when defensive, hold gold/Treasuries *only while each is itself trending up*, else cash ("flight to what's working").
+6. **Monthly rebalance** with costs charged on turnover.
+
+Risk-adjusted "winning" is judged on **Sharpe and max drawdown**, not raw return — see [`metrics.py`](metrics.py). Reproduce with `python strategy_c.py`.
+
+### Broad 65-name pool, 1993–2026 (the dynamic risk-off sleeve wins outright)
+
+![Strategy C vs benchmarks](strategy_c.png)
+
+| Strategy | CAGR | Sharpe | Max DD | Calmar |
+|---|---:|---:|---:|---:|
+| **Strategy C — dynamic risk-off** | 23.2% | **1.09** | **−26%** | **0.89** |
+| Strategy C — cash sleeve | 20.9% | 1.03 | −28% | 0.74 |
+| EW-hold of the *same* 65 names | 19.8% | 0.99 | −49% | 0.40 |
+| SPY buy & hold | 10.8% | 0.64 | −55% | 0.20 |
+
+It beats SPY *and* equal-weight buy-and-hold of the **same names** — so the edge is the strategy, not the stock list. The dynamic sleeve earns gold/Treasury returns when they trend but bails to cash otherwise (dodging the 2022 bond crash), giving the **best return and the lowest drawdown at the same time**.
+
+### Survivorship, peeled back layer by layer
+
+Beating the market is easy to fake with hindsight. Watch the CAGR fall as each cheat is removed:
+
+| Universe | CAGR | What it proves |
+|---|---:|---|
+| Today's full S&P 500, run backwards | 40.6% | **A trap** — secretly pre-loaded with future winners |
+| **Point-in-time** S&P membership ([`run_sp500_pit.py`](run_sp500_pit.py)) | 32.2% | Selection hindsight removed (~8 pts of fake return gone) |
+| 65-megacap pool vs EW-hold same names | ~23% | Survivorship-controlled by construction |
+
+![Point-in-time S&P 500](strategy_c_pit.png)
+
+The point-in-time run reconstructs *who was in the index on each date* (from Wikipedia's change log) and only lets the bot pick from then-members. It could price **682 of 867** ever-members (79%); the missing 21% are delisted names (Lehman, Enron, Kodak…) that free data won't serve — the residual *price* survivorship. Notably, that residual matters far less here than for a buy-and-hold backtest: a **trend-following strategy exits dying names on their downturn rather than riding them to zero**, so it would have cut most of those losers anyway. The fully-clean number needs a delisted-price dataset (CRSP / Sharadar / Norgate).
+
+**The robust, bias-proof takeaway:** across every universe, Strategy C delivers **Sharpe ~1.1–1.25 vs SPY's 0.64** and **drawdowns of −26% to −35% vs SPY's −55%.** That edge comes from the regime gate, which is universe-independent. The honest headline isn't "huge returns" — it's **roughly half the drawdown at nearly double the Sharpe.**
+
+---
+
+## 📰 Bot 2 — news, sentiment & industry linkage (in progress)
+
+A second, complementary system that feeds *ideas* to the systematic core rather than trading on its own:
+
+- **`news_sentiment.py`** — pluggable news ingestion (free yfinance source now; paid APIs droppable in later) + VADER sentiment scoring into a per-ticker signal.
+- **`industry_map.py`** — thematic baskets + data-driven correlation peers ("who benefits from the SpaceX IPO?").
+- **`live_picks.py`** — wires sentiment into Strategy C's live ranking as a modest tilt (the trend signal dominates; sentiment breaks ties).
+
+**Honest status:** Bot 2 is a *live* signal, not yet backtestable — free news is recent-only, and an honest sentiment backtest needs point-in-time historical news (a paid dataset). Treat it as a tilt on the proven systematic core until validated.
+
+---
+
 ## 🎯 The problem this solves
 
 Most retail "trading bot" projects pick one strategy (trend-following or mean-reversion) and apply it to every ticker. That works for the subset of stocks that match the strategy, and silently loses money on the rest. A high-volatility momentum stock like NVDA needs different treatment than a choppy laggard like F, which needs different treatment than a low-vol blue chip like JPM.
