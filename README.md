@@ -282,6 +282,19 @@ For **live execution** (still off by default), supply `schwab_keys.json` with yo
 
 ---
 
+## 🛰️ Concept-drift monitor
+
+A backtested edge is a historical artifact; the honest live job is to notice when the strategy stops behaving the way the backtest said it would, and cut size before it bleeds. `concept_drift.py` does exactly that. It takes the realized equity curve, computes the Sharpe of every rolling window across the baseline history, and ranks the most-recent window in that distribution. A recent window in the bottom 5% (or a drawdown that breaches the worst the backtest ever produced) raises a graded flag: **OK** (continue) / **WATCH** (halve size) / **DRIFT** (pause, re-examine). No thresholds pulled from the air; everything is a percentile of the strategy's own history.
+
+```bash
+python concept_drift.py                                          # Strategy C, its recent quarter vs its history
+python concept_drift.py --baseline strategy_c_equity.csv --live live_equity.csv   # live curve vs backtest
+```
+
+Reuses `metrics.py`, no new dependencies.
+
+---
+
 ## 📉 Honest limitations
 
 - **Yahoo Finance's hourly endpoint caps at ~730 days.** That's one walk-through per ticker; not enough for walk-forward validation. Real validation needs multi-decade daily data + a real walk-forward harness.
