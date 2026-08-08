@@ -284,14 +284,36 @@ For **live execution** (still off by default), supply `schwab_keys.json` with yo
 
 ## 🛰️ Concept-drift monitor
 
-A backtested edge is a historical artifact; the honest live job is to notice when the strategy stops behaving the way the backtest said it would, and cut size before it bleeds. `concept_drift.py` does exactly that. It takes the realized equity curve, computes the Sharpe of every rolling window across the baseline history, and ranks the most-recent window in that distribution. A recent window in the bottom 5% (or a drawdown that breaches the worst the backtest ever produced) raises a graded flag: **OK** (continue) / **WATCH** (halve size) / **DRIFT** (pause, re-examine). No thresholds pulled from the air; everything is a percentile of the strategy's own history.
+A backtested edge is a historical artifact; the live job is to notice when the strategy stops behaving the way the backtest said it would. `concept_drift.py` ranks the most recent rolling-Sharpe window against the strategy's own history and grades it **OK** / **WATCH** / **DRIFT**.
 
 ```bash
-python concept_drift.py                                          # Strategy C, its recent quarter vs its history
-python concept_drift.py --baseline strategy_c_equity.csv --live live_equity.csv   # live curve vs backtest
+python concept_drift.py                  # Strategy C, persistence auto-calibrated
+python concept_drift.py --validate       # does the rule predict anything at all?
+python concept_drift.py --baseline strategy_c_equity.csv --live live_equity.csv
 ```
 
-Reuses `metrics.py`, no new dependencies.
+### Why it is stricter than the obvious version
+
+The first version graded on a bare percentile: below the 20th meant WATCH. That fires on 20% of readings *by construction*, since a percentile threshold is arithmetic, not evidence. Measured on Strategy C: exactly 20.0%. An alarm that chirps one reading in five trains you to ignore it.
+
+Five corrections:
+
+1. **Persistence, calibrated to a target fire rate.** A flag now needs the percentile to stay below its cutoff for K consecutive windows, and K is *measured* against history until the whole rule fires on at most `--target-rate` of it (default 5%). Rolling Sharpe has a lag-1 autocorrelation of 0.975, so K cannot be derived from theory. On Strategy C, K=23 yields a 4.9% fire rate. Every report prints the rule's own historical fire rate beside its verdict.
+2. **Honest sample size.** 63-bar windows stepped daily share 62/63 of their data. Strategy C's 8,102 windows are worth about 128 independent ones. The percentile is still a fair point estimate, so a moving-block bootstrap (blocks of `window`, preserving the autocorrelation an ordinary bootstrap would destroy) reports a band around it.
+3. **Staleness.** A verdict computed on a curve that stopped months ago is history, and now says so at the top of the report.
+4. **Mode honesty.** Single-curve mode ranks a curve's tail against its own body. If that curve is a backtest, it *cannot* detect live-versus-backtest divergence, which is what concept drift means, so its verdicts are labelled **DESCRIPTIVE**. Only split mode is **DIAGNOSTIC**.
+5. **Self-audit (`--validate`).** The check that decides whether any of it is worth acting on: using only non-overlapping windows, did flagged readings actually precede worse forward returns? Tested once per phase offset and **never pooled**, because pooling reuses every bar 63 times. On Strategy C that distinction turned a p-value of 0.048 into 0.512 without adding one observation.
+
+### What the audit currently says about Strategy C
+
+Run it and see, but as of the 2026-05-20 curve the answer is uncomfortable and worth stating plainly:
+
+- The **old bare-percentile WATCH rule carries no information.** Well-powered test (about 26 independent flagged observations per offset), median permutation p of 0.647, **0% of offsets reach p < 0.05**, and 57% of them point the wrong way. Flags did not precede weakness.
+- The **new calibrated rule is untestable on this data.** Calibrating to a 5% fire rate leaves roughly 6 independent flagged observations, which no test can separate from noise. `--validate` reports UNDERPOWERED rather than inventing a verdict.
+
+That is the honest position: rarity and testability trade off directly against each other on a single 32-year curve, and neither rule has earned the right to change position sizing. Feeding a real live curve into split mode is what would change that.
+
+No verdict here is a trade instruction.
 
 ---
 
