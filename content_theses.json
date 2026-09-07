@@ -21,22 +21,57 @@
         "note": "Published estimates put joint actuators at roughly 30% to 56% of the bill of materials: Morgan Stanley about 56%, Interact Analysis above 30% on high-configuration humanoids and above 50% on simpler ones. Bank of America splits linear actuators at 27% and rotary at 24%, which is about 51% before dexterous hands at 19%. Add the hands, which are themselves actuator-dense, and you reach roughly 70%. So the video's number is defensible ONLY under the broadest definition of actuation and is high against the common one. The thesis does not depend on 70%: it depends on actuation being the largest single cost centre, and that is well supported at any of these figures."
       },
       "named_companies": [
-        {"name": "Sanhua Intelligent Controls", "role": "actuator assembly for Tesla Optimus",
-         "claim": "$500M in current orders", "verdict": "UNVERIFIED",
-         "us_access": "NONE. No United States American Depositary Receipt. Hong Kong 2050.HK or Shenzhen 002050.SZ only, so it needs a brokerage with Hong Kong access.",
-         "tradeable_us": false},
-        {"name": "Harmonic Drive Systems", "role": "strain-wave reducers",
-         "claim": "60% share of Optimus reducers", "verdict": "UNVERIFIED",
-         "us_access": "HSYDF on the United States over-the-counter Pink market. Exists, but see the tradability gate: it is effectively untradeable at size.",
-         "tradeable_us": "nominal"},
-        {"name": "MP Materials", "role": "rare earth magnets",
-         "claim": "humanoids need 2x to 3x the magnetic material of an electric vehicle", "verdict": "UNVERIFIED",
-         "us_access": "NYSE, ordinary access.", "tradeable_us": true}
+        {
+          "name": "Sanhua Intelligent Controls",
+          "role": "actuator assembly for Tesla Optimus",
+          "claim": "$500M in current orders",
+          "verdict": "UNVERIFIED",
+          "us_access": "NONE. No United States American Depositary Receipt. Hong Kong 2050.HK or Shenzhen 002050.SZ only, so it needs a brokerage with Hong Kong access.",
+          "tradeable_us": false
+        },
+        {
+          "name": "Harmonic Drive Systems",
+          "role": "strain-wave reducers",
+          "claim": "60% share of Optimus reducers",
+          "verdict": "UNVERIFIED",
+          "us_access": "HSYDF on the United States over-the-counter Pink market. Exists, but see the tradability gate: it is effectively untradeable at size.",
+          "tradeable_us": "nominal"
+        },
+        {
+          "name": "MP Materials",
+          "role": "rare earth magnets",
+          "claim": "humanoids need 2x to 3x the magnetic material of an electric vehicle",
+          "verdict": "UNVERIFIED",
+          "us_access": "NYSE, ordinary access.",
+          "tradeable_us": true
+        }
       ],
-      "markers": ["track_record_no_evidence", "no_position_disclosure", "no_methodology"],
+      "markers": [
+        "track_record_no_evidence",
+        "no_position_disclosure",
+        "no_methodology"
+      ],
       "marker_note": "Claims $1,000 in SanDisk a year ago is $34,180 today, roughly 34x, with no supporting data and nothing at all on the robotics names' actual performance. Decoration, not evidence.",
-      "expressions": ["MP", "HSYDF", "BOTZ", "ROBO", "ARKQ"],
-      "expression_note": "The named companies plus the sector exchange-traded funds the video never mentions, which are the obvious retail expression of a supply-chain thesis and therefore have to be checked rather than assumed."
+      "expressions": [
+        "MP",
+        "HSYDF",
+        "BOTZ",
+        "ROBO",
+        "ARKQ"
+      ],
+      "expression_note": "The named companies plus the sector exchange-traded funds the video never mentions, which are the obvious retail expression of a supply-chain thesis and therefore have to be checked rather than assumed.",
+      "fund_check": {
+        "as_of": "2026-09-04",
+        "source": "Global X issuer file, botz_full-holdings_20260904.csv, 66 holdings summing to 100.04%",
+        "headline": "BOTZ holds NONE of the three named bottleneck companies.",
+        "detail": [
+          "Harmonic Drive: NOT HELD. Sanhua: NOT HELD. MP Materials: NOT HELD.",
+          "Layer split by my classification, which is a judgement call and open to argument: about 53% sits in body and component names, about 27% in the brain and robot-maker layer the thesis says to avoid, and about 20% is neither.",
+          "The 53% overstates alignment with the HUMANOID bottleneck. Keyence, ABB, Fanuc, SMC, Daifuku, Omron and Yaskawa are factory-automation incumbents, which is a different business from humanoid actuators and reducers. The fund gives industrial automation, not the constrained layer the argument identifies.",
+          "NVIDIA is the second largest holding at 10.11%, so the single biggest single-name bet inside a supply-chain fund is the brain layer the thesis argues against.",
+          "ARKQ and ROBO were NOT confirmed from issuer files: the ARK and ROBO Global holdings endpoints did not resolve at the URLs tried, so those two rest on a free-feed top-ten only and their full books remain unverified."
+        ]
+      }
     },
     {
       "id": "ig-DawQhJSpTmm",
@@ -57,9 +92,16 @@
         "note": "The 519ml figure traces to the 2023 'Making AI Less Thirsty' study on GPT-3-era inference. Ren has since revised it to roughly 15ml full scope per GPT-4-class prompt, about 5ml counting only the datacentre, and stated the original was time-specific and assumption-based and should not be used to describe today's optimised systems. OpenAI puts an average query near 0.3ml. The gap is partly definitional, since the original counted water evaporated at power plants and modelled a coal-heavy 2023 Iowa grid, but the video presents a superseded number as current and the revision is roughly 35x. The supporting map is the OECD Environmental Outlook from 2008 projecting 2030, an eighteen-year-old projection presented without noting newer work exists."
       },
       "named_companies": [],
-      "markers": ["no_position_disclosure", "no_methodology"],
+      "markers": [
+        "no_position_disclosure",
+        "no_methodology"
+      ],
       "marker_note": "Cites a real source, which is what made the retraction findable. That is better than an unsourced claim.",
-      "expressions": ["FIW", "PHO", "CGW"],
+      "expressions": [
+        "FIW",
+        "PHO",
+        "CGW"
+      ],
       "expression_note": "Downgrade the thesis, do not discard the instruments. Water scarcity is a genuine long-horizon theme and these are ordinary, liquid exchange-traded funds. What does not survive is the specific artificial-intelligence urgency, which rested on the retracted figure."
     }
   ]

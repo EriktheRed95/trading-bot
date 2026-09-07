@@ -1316,6 +1316,11 @@ def render_thesis(th):
                      f'<span class="tiny">{esc(c.get("us_access", ""))}</span>'
                      f'</td></tr>')
         o.append('</tbody></table>')
+    fc = th.get('fund_check')
+    if fc:
+        o.append(f'<div class="killer"><b>{esc(fc["headline"])}</b>'
+                 + "".join(f'<p class="note">{esc(x)}</p>' for x in fc['detail'])
+                 + f'<p class="src">{esc(fc["source"])}</p></div>')
     if th.get('expression_note'):
         o.append(f'<p class="note">{esc(th["expression_note"])}</p>')
     if th.get('marker_note'):
@@ -1791,6 +1796,11 @@ def render_md(panels, live, macro, on_res, dry_run, dry_src, port=None, tips=Non
                                  f"{c.get('claim','')} ({c.get('verdict','')}) | "
                                  f"{lab}: {c.get('us_access','')} |")
                     L.append("")
+                fc = th.get('fund_check')
+                if fc:
+                    L += [f"**{fc['headline']}**", ""]
+                    L += [f"- {x}" for x in fc['detail']]
+                    L += ["", f"Source: {fc['source']}", ""]
                 for k in ('expression_note', 'marker_note'):
                     if th.get(k):
                         L += [th[k], ""]
