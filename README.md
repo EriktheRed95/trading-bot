@@ -189,10 +189,49 @@ buy-and-hold below roughly **0.4bp per side** and turns outright negative above
 Even on the video's own cherry-picked name the framing collapses: MU's
 +384,729,533% gross becomes **+998% net, against +75,161% for simply holding it.**
 
-Note the direction of the remaining bias: the 65-name pool is survivorship-
-controlled by construction but not fully clean, so the *gross* line is likely
-flattered. That works in favor of this conclusion, not against it. Run
-`--universe pit` to confirm on point-in-time membership.
+### Confirmed on point-in-time membership — and it got worse
+
+Re-run on **point-in-time S&P 500 membership, 2007-2026** (the window where the
+change log is actually dense), ~417 names/day, with the data filter below:
+
+| Point-in-time universe, 2007-2026 | CAGR | Sharpe | Max DD |
+|---|---:|---:|---:|
+| EW hold, same names (gross) | 12.0% | 0.64 | -54% |
+| SPY buy & hold (net) | 11.0% | 0.63 | -55% |
+| Overnight leg, **zero costs** | 7.9% | **0.69** | -32% |
+| Overnight leg, **net at 6bp/side** | **-20.2%** | -1.81 | -99% |
+
+**The Sharpe of 1.19-1.37 was a mega-cap artifact.** On an honest broad universe
+the overnight leg grosses 0.69 against SPY's 0.63 — no meaningful risk-adjusted
+edge *before* costs — and breakeven falls to roughly 1-2bp/side. This is the
+same shape as the sentiment tilt: strong on a curated pool, gone on the broad one.
+
+### ⚠️ Free price data on delisted tickers is broken (affects `run_sp500_pit.py`)
+
+Found while running the above. Point-in-time membership deliberately pulls
+delisted names back in — and those are exactly the tickers yfinance serves badly.
+**Cooper Industries (CBE) delisted in 2012 but still prints 2016 rows showing a
+prior close of $0.005 against an open of $170 on the same day** — an implied
++3,399,900% overnight return, dozens of times. Ten of the 682 priced names print
+moves above 500%. Unfiltered, those ten produced a **2,325% CAGR** for the whole
+portfolio.
+
+The filter used here, stated so it can be argued with: **both sides of a leg must
+price at $1 or above, and any single-session move beyond ±50% is dropped.** That
+removes 2.8% of name-days.
+
+**This is a live risk to the 32.2% point-in-time result above.** Those broken
+names *pass* Strategy C's eligibility filter on 13,072 name-days and reach the
+momentum top-10 on **190 rebalance dates**; CPWR and MI still read as eligible in
+2026, years after they stopped trading. That number has not been shown to be
+wrong — it has been shown to be **unverified**. Re-run `run_sp500_pit.py` with
+the same sanity filter before quoting it again.
+
+> Also fixed here: Wikipedia **split the S&P 500 change log out** of the
+> constituents page, which silently broke `build_membership()` with a `KeyError`.
+> It now reads from `Historical components of the S&P 500`, and **refuses to fall
+> back to current membership** rather than quietly returning a survivorship-biased
+> universe.
 
 ---
 

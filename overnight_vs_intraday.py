@@ -159,7 +159,7 @@ def single_name(ticker, cost_per_side=COST_PER_SIDE, open_penalty=OPEN_PENALTY):
 
 
 def universe_run(tickers, cost_per_side=COST_PER_SIDE, open_penalty=OPEN_PENALTY,
-                 holdable_fn=None, min_names=5):
+                 holdable_fn=None, min_names=5, start=None):
     """Equal-weight the legs across a universe, rebalanced daily.
 
     holdable_fn(date) -> set of tickers allowed on that date. Supplying the
@@ -173,18 +173,30 @@ def universe_run(tickers, cost_per_side=COST_PER_SIDE, open_penalty=OPEN_PENALTY
 
     mask = on.notna() & intr.notna()
     if holdable_fn is not None:
-        allowed = pd.DataFrame(False, index=on.index, columns=cols)
+        rows = []
         for dt in on.index:
             members = holdable_fn(dt)
-            allowed.loc[dt] = [t in members for t in cols]
+            rows.append([t in members for t in cols])
+        allowed = pd.DataFrame(rows, index=on.index, columns=cols)
+        # The overnight position is ENTERED at the close of the prior session, so
+        # only membership known by then may gate it. Using same-day membership
+        # would leak one day of index-change hindsight into the decision.
+        allowed = allowed.shift(1).fillna(False).astype(bool)
         mask &= allowed
 
     n = mask.sum(axis=1)
     keep = n >= min_names
+    if start is not None:
+        keep &= (on.index >= pd.Timestamp(start))
     w = mask.where(mask).astype(float).div(n, axis=0)          # equal weight
 
     on_p = (on * w).sum(axis=1)[keep]
     intr_p = (intr * w).sum(axis=1)[keep]
+    # The benchmark that actually matters. Holding the SAME names all day is what
+    # the overnight trader gives up, and it is the standard this repo already
+    # holds Strategy C to. SPY alone flatters any strategy run on megacaps.
+    full = (cl[cols] / cl[cols].shift(1) - 1.0)
+    full_p = (full * w).sum(axis=1)[keep]
     spy = cl[MARKET].reindex(on_p.index).dropna()
 
     rows = [
@@ -194,6 +206,7 @@ def universe_run(tickers, cost_per_side=COST_PER_SIDE, open_penalty=OPEN_PENALTY
                   f"Intraday only   (net, {cost_per_side*1e4:.0f}bp/side)"),
         summarize(_equity(on_p), "Overnight only  (ZERO costs)"),
         summarize(_equity(intr_p), "Intraday only   (ZERO costs)"),
+        summarize(_equity(full_p), "EW hold, SAME names (ZERO costs)"),
         summarize(hold_equity(spy, cost_per_side), "SPY buy and hold (net)"),
     ]
     span = (f"{on_p.index[0].date()} -> {on_p.index[-1].date()}  "
@@ -250,6 +263,10 @@ def main():
     p.add_argument('--open-penalty', type=float, default=OPEN_PENALTY,
                    help='multiplier on the open-auction fill cost (default 1.0, '
                         'i.e. the open is charged the same as the close)')
+    p.add_argument('--start', metavar='YYYY-MM-DD',
+                   help='restrict the universe run to this start date onward '
+                        '(use it when membership data is only trustworthy from '
+                        'a certain year)')
     p.add_argument('--skip-single', action='store_true')
     p.add_argument('--json', metavar='PATH',
                    help='also write the results to PATH as JSON, so a dashboard '
@@ -274,9 +291,11 @@ def main():
         print(f"\nPoint-in-time universe: {len(universe)} ever-members. "
               f"Downloading (slow)...")
         rows, on_p, intr_p = universe_run(universe, cost, args.open_penalty,
-                                          holdable_fn=members_asof)
+                                          holdable_fn=members_asof,
+                                          start=args.start)
     else:
-        rows, on_p, intr_p = universe_run(BROAD_UNIVERSE, cost, args.open_penalty)
+        rows, on_p, intr_p = universe_run(BROAD_UNIVERSE, cost, args.open_penalty,
+                                          start=args.start)
 
     breakeven, sweep = cost_sweep(on_p, intr_p, args.open_penalty)
     out['universe_rows'] = rows

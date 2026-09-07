@@ -9,3 +9,5 @@ token.json
 # Python temporary files
 __pycache__/
 *.py[cod]
+# Ad-hoc run logs
+pit_run*.log

@@ -23,6 +23,11 @@ from strategy_c import (MARKET, RISK_OFF_TICKERS, _rebased, load_prices,
                         run_allocator)
 
 URL = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
+# Wikipedia SPLIT the change log out of the constituents page (confirmed broken
+# 2026-09-07: the old page now serves only the members table and a navbox, so the
+# original two-tables-from-one-page read raised KeyError on ('Effective Date',...)).
+# The change log now lives in its own article, with the same MultiIndex columns.
+HISTORICAL_URL = 'https://en.wikipedia.org/wiki/Historical_components_of_the_S%26P_500'
 CHANGE_CUTOFF = pd.Timestamp('1990-01-01')  # bound the priced universe
 
 
@@ -30,11 +35,37 @@ def _norm(s):
     return str(s).strip().replace('.', '-')
 
 
+def _tables(url):
+    html = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=30).text
+    return pd.read_html(io.StringIO(html))
+
+
+def _find_change_table(tables):
+    """The change log is the table carrying the Added/Removed ticker columns."""
+    for t in tables:
+        if (isinstance(t.columns, pd.MultiIndex)
+                and ('Added', 'Ticker') in t.columns
+                and ('Removed', 'Ticker') in t.columns):
+            return t
+    return None
+
+
 def build_membership():
     """Returns (members_asof(date)->set, current_set, priced_universe_list, changes)."""
-    html = requests.get(URL, headers={'User-Agent': 'Mozilla/5.0'}, timeout=30).text
-    cur_tbl, ch_tbl = pd.read_html(io.StringIO(html))[:2]
-    current = {_norm(s) for s in cur_tbl['Symbol']}
+    cur_tables = _tables(URL)
+    current = {_norm(s) for s in cur_tables[0]['Symbol']}
+
+    # Prefer the change log wherever it currently lives: same page first (in case
+    # Wikipedia moves it back), then the dedicated historical-components article.
+    ch_tbl = _find_change_table(cur_tables)
+    if ch_tbl is None:
+        ch_tbl = _find_change_table(_tables(HISTORICAL_URL))
+    if ch_tbl is None:
+        raise RuntimeError(
+            "Could not locate the S&P 500 change log on either Wikipedia page. "
+            "Point-in-time membership cannot be reconstructed, so any result "
+            "would carry the selection hindsight this script exists to remove. "
+            "Refusing to fall back to current membership.")
 
     date_col = ('Effective Date', 'Effective Date')
     add_col, rem_col = ('Added', 'Ticker'), ('Removed', 'Ticker')

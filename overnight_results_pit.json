@@ -1,0 +1,149 @@
+{
+  "filter": {
+    "price_floor": 1.0,
+    "move_cap": 0.5,
+    "dropped_name_days": 128055
+  },
+  "FULL 1990+ (membership sparse before 2007)": {
+    "rows": [
+      {
+        "label": "Overnight leg  (ZERO costs)",
+        "total_return": 1177.2174856045208,
+        "cagr": 7.193816408310139,
+        "ann_vol": 9.797242469491184,
+        "sharpe": 0.7584008657689231,
+        "max_drawdown": -31.60235925308925,
+        "calmar": 0.22763542274480394,
+        "years": 36.668035592060235
+      },
+      {
+        "label": "Intraday leg   (ZERO costs)",
+        "total_return": 1863.9359615493554,
+        "cagr": 8.459049018612141,
+        "ann_vol": 14.686307359385637,
+        "sharpe": 0.6264490944551518,
+        "max_drawdown": -44.55938083534113,
+        "calmar": 0.18983766964515503,
+        "years": 36.668035592060235
+      },
+      {
+        "label": "EW hold SAME names (ZERO costs)",
+        "total_return": 22426.749827205935,
+        "cagr": 15.920997632084188,
+        "ann_vol": 18.253605526788792,
+        "sharpe": 0.9010377555359442,
+        "max_drawdown": -53.95340226877365,
+        "calmar": 0.2950879270369703,
+        "years": 36.668035592060235
+      },
+      {
+        "label": "SPY buy and hold (net)",
+        "total_return": 3094.0504487396406,
+        "cagr": 10.86058974553923,
+        "ann_vol": 18.531756303975612,
+        "sharpe": 0.6491749325713296,
+        "max_drawdown": -55.189438418991664,
+        "calmar": 0.1967874661649376,
+        "years": 33.596167008898014
+      },
+      {
+        "label": "Overnight leg  (net 6bp/side)",
+        "total_return": -99.98042240386157,
+        "cagr": -20.773596746149746,
+        "ann_vol": 9.797242469491188,
+        "sharpe": -2.326396527037733,
+        "max_drawdown": -99.98049289290361,
+        "calmar": -0.20777649864560938,
+        "years": 36.668035592060235
+      },
+      {
+        "label": "Intraday leg   (net 6bp/side)",
+        "total_return": -99.96988849369117,
+        "cagr": -19.837912789036793,
+        "ann_vol": 14.686307359385637,
+        "sharpe": -1.4314206809085366,
+        "max_drawdown": -99.97000818444427,
+        "calmar": -0.19843864324224045,
+        "years": 36.668035592060235
+      }
+    ],
+    "breakeven_bps": 2,
+    "sessions": 9236,
+    "span": [
+      "1990-01-03",
+      "2026-09-04"
+    ],
+    "avg_names": 351.3015374621048
+  },
+  "2007+ (membership genuinely point-in-time)": {
+    "rows": [
+      {
+        "label": "Overnight leg  (ZERO costs)",
+        "total_return": 344.4925226427938,
+        "cagr": 7.8794743179328774,
+        "ann_vol": 12.109967436909706,
+        "sharpe": 0.6873054922573701,
+        "max_drawdown": -31.602359253089276,
+        "calmar": 0.24933183800708242,
+        "years": 19.668720054757017
+      },
+      {
+        "label": "Intraday leg   (ZERO costs)",
+        "total_return": 120.0888117833872,
+        "cagr": 4.092254983561694,
+        "ann_vol": 16.428501326219767,
+        "sharpe": 0.32636457788884443,
+        "max_drawdown": -44.55938083534116,
+        "calmar": 0.09183823713088994,
+        "years": 19.668720054757017
+      },
+      {
+        "label": "EW hold SAME names (ZERO costs)",
+        "total_return": 834.9051989562564,
+        "cagr": 12.035565318647357,
+        "ann_vol": 21.088176166059892,
+        "sharpe": 0.6447393309310233,
+        "max_drawdown": -53.953402268773665,
+        "calmar": 0.22307333388710354,
+        "years": 19.668720054757017
+      },
+      {
+        "label": "SPY buy and hold (net)",
+        "total_return": 678.9965647873295,
+        "cagr": 11.001176805708601,
+        "ann_vol": 19.56048553960647,
+        "sharpe": 0.6315506602572203,
+        "max_drawdown": -55.18943841899164,
+        "calmar": 0.1993348205899284,
+        "years": 19.668720054757017
+      },
+      {
+        "label": "Overnight leg  (net 6bp/side)",
+        "total_return": -98.83095941919248,
+        "cagr": -20.243827584305308,
+        "ann_vol": 12.109967436909708,
+        "sharpe": -1.806023720754093,
+        "max_drawdown": -98.83516854425939,
+        "calmar": -0.20482413175872632,
+        "years": 19.668720054757017
+      },
+      {
+        "label": "Intraday leg   (net 6bp/side)",
+        "total_return": -99.42172591729768,
+        "cagr": -23.047617740361027,
+        "ann_vol": 16.42850132621977,
+        "sharpe": -1.511547169476385,
+        "max_drawdown": -99.43054987101358,
+        "calmar": -0.2317961408265325,
+        "years": 19.668720054757017
+      }
+    ],
+    "breakeven_bps": 2,
+    "sessions": 4950,
+    "span": [
+      "2007-01-03",
+      "2026-09-04"
+    ],
+    "avg_names": 416.96363636363634
+  }
+}

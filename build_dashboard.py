@@ -96,6 +96,67 @@ def fetch_live():
     return out
 
 
+def current_portfolio(top_n=10):
+    """What Strategy C's RULES select as of today, with inverse-volatility weights.
+
+    This is a MODEL portfolio, not a position book. DRY_RUN is True and nothing
+    in this repo has ever traded, so there are no held positions to report. What
+    this answers is the honest live question: if the validated strategy were run
+    today, what would it hold and at what weight?
+
+    Ranking comes from live_picks.live_ranking with the sentiment tilt OFF, since
+    that tilt is in the rejected tier. Sizing repeats run_allocator's own rule:
+    weight proportional to 1/volatility, normalized.
+    """
+    from live_picks import live_ranking
+    from strategy_c import BROAD_UNIVERSE, RISK_OFF_TICKERS, load_prices
+
+    close = load_prices(BROAD_UNIVERSE + list(RISK_OFF_TICKERS), period="2y")
+    r = live_ranking(close, BROAD_UNIVERSE, top_n=top_n, use_sentiment=False)
+    d = r['date']
+    sma = close.rolling(200).mean()
+    vol = close.pct_change().rolling(63).std() * (252 ** 0.5)
+
+    out = {'asof': str(d.date()), 'risk_on': r['risk_on'],
+           'n_eligible': len(r['eligible']), 'top_n': top_n, 'holdings': [],
+           'risk_off': [], 'history': {}}
+
+    if r['risk_on']:
+        picks = r['picks_without'][:top_n]
+        inv = 1.0 / vol.loc[d, picks]
+        w = inv / inv.sum()
+        for t in picks:
+            out['holdings'].append({
+                'ticker': t, 'weight': float(w[t]) * 100.0,
+                'vol': float(vol.loc[d, t]) * 100.0,
+                'price': float(close.at[d, t]),
+                'above_sma': float(close.at[d, t] / sma.at[d, t] - 1.0) * 100.0,
+                'score': float(r['base'].get(t, float('nan'))),
+            })
+            out['history'][t] = [float(x) for x in close[t].dropna().iloc[-126:]]
+    else:
+        # Dynamic risk-off sleeve: hold each candidate only while it is trending.
+        trending = [c for c in RISK_OFF_TICKERS
+                    if c in close.columns and close[c].iloc[-1] > sma[c].iloc[-1]]
+        for c in RISK_OFF_TICKERS:
+            if c not in close.columns:
+                continue
+            up = c in trending
+            out['risk_off'].append({
+                'ticker': c, 'trending': up,
+                'weight': (100.0 / len(trending)) if up and trending else 0.0,
+                'price': float(close[c].iloc[-1]),
+                'above_sma': float(close[c].iloc[-1] / sma[c].iloc[-1] - 1.0) * 100.0,
+            })
+            out['history'][c] = [float(x) for x in close[c].dropna().iloc[-126:]]
+        out['cash_pct'] = 0.0 if trending else 100.0
+
+    spy = close['SPY'].dropna()
+    out['history']['SPY'] = [float(x) for x in spy.iloc[-378:]]
+    out['history']['SPY_SMA200'] = [float(x) for x in sma['SPY'].dropna().iloc[-378:]]
+    return out
+
+
 def direction(value, neutral):
     if value > neutral:
         return 'rising'
@@ -122,7 +183,7 @@ def macro_reading(live):
 
 # ------------------------------------------------------------------- the panels
 
-def build_panels(live, macro, on_res):
+def build_panels(live, macro, on_res, port=None):
     """Every panel, each stamped with its tier. Order is deliberate."""
     ov = {r['label']: r for r in on_res.get('universe_rows', [])} if on_res else {}
     ov_single = ({r['label']: r for r in on_res['single_name']['rows']}
@@ -134,6 +195,28 @@ def build_panels(live, macro, on_res):
     panels = []
 
     # ---------------------------------------------------------- TIER 1
+    if port:
+        panels.append(dict(
+            tier=1, title="Current model portfolio",
+            subtitle="What Strategy C's rules select as of today. Not a position book.",
+            portfolio=True,
+            body=[
+                "There are no active positions to report, and that is not an "
+                "omission. DRY_RUN is True, nothing in this repo has ever placed "
+                "an order, and no live or paper account is connected. What this "
+                "panel answers instead is the live question worth asking: if the "
+                "validated strategy ran today, what would it hold and at what "
+                "weight?",
+                "Ranking is the repo's own live_picks ranking with the news "
+                "sentiment tilt switched OFF, because that tilt sits in the "
+                "rejected tier. Sizing repeats the allocator's rule: weight "
+                "proportional to one divided by volatility, so each name "
+                "contributes roughly equal risk. Strategy C rebalances MONTHLY, "
+                "so this is a snapshot of the ranking, not a daily trade list.",
+            ],
+            source="live_picks.py + strategy_c.py. Reproduce: python live_picks.py",
+        ))
+
     panels.append(dict(
         tier=1, title="Strategy C: trend-following, regime-gated allocator",
         subtitle="The only strategy in this stack with earned authority.",
@@ -167,6 +250,70 @@ def build_panels(live, macro, on_res):
                "The honest headline is not large returns. It is about half the "
                "drawdown at nearly double the Sharpe ratio.",
         source="strategy_c.py, README.md. Reproduce: python strategy_c.py",
+    ))
+
+    panels.append(dict(
+        tier=1, title="Every strategy side by side",
+        subtitle="Same 65 names, same window, so the comparison is real.",
+        body=[
+            "Backtest numbers are usually incomparable because each one quietly "
+            "uses a different universe or window. These do not. Every row below "
+            "is the same 65-name pool over 1993-11 to 2026-09, which is why the "
+            "overnight legs were re-run on Strategy C's window specifically to "
+            "sit in this table.",
+            "The tier column is the point. Two rows have earned their numbers. "
+            "Four are shown precisely because they were tested and failed.",
+        ],
+        comparison=[
+            ("Strategy C, dynamic risk-off", "23.2%", "1.09", "-26%", 1),
+            ("Strategy C, cash sleeve", "20.9%", "1.03", "-28%", 1),
+            ("Equal-weight hold, same 65 names", "19.9%", "0.99", "-49%", 0),
+            ("Overnight leg, ZERO costs", "13.8%", "1.19", "-30%", 2),
+            ("SPY buy and hold", "10.8%", "0.64", "-55%", 0),
+            ("Intraday leg, ZERO costs", "5.5%", "0.40", "-43%", 2),
+            ("Overnight leg, net 6bp per side", "-15.9%", "-1.45", "-100%", 2),
+            ("Intraday leg, net 6bp per side", "-22.0%", "-1.40", "-100%", 2),
+        ],
+        readings=[
+            "Read the zero-cost overnight row carefully, because it is the one "
+            "place the video's idea genuinely shines: Sharpe 1.19 actually beats "
+            "Strategy C's 1.09. That is the published anomaly showing up in this "
+            "data, and it deserves to be stated rather than buried.",
+            "It still loses. Even given free trading it returns 13.8% against "
+            "19.9% for simply holding the same names, because trading only the "
+            "overnight leg throws away the intraday leg's 5.5%. Better ratio, "
+            "much less money, and only in a world without costs.",
+            "Charge the repo's own costs and both legs go to roughly -100%. The "
+            "gap between the 13.8% row and the -15.9% row is nothing but "
+            "spread paid 504 times a year.",
+            "The original mean-reversion engine is absent from this table on "
+            "purpose. It was tested per-name on different windows, not as a "
+            "portfolio, so putting it here would fake a comparability it does "
+            "not have. Its result stands separately: it beat buy-and-hold on 2 "
+            "of 14 names hourly and 0 of 14 daily.",
+        ],
+        comparison_pit=[
+            ("Equal-weight hold, same names", "12.0%", "0.64", "-54%", 0),
+            ("SPY buy and hold", "11.0%", "0.63", "-55%", 0),
+            ("Overnight leg, ZERO costs", "7.9%", "0.69", "-32%", 2),
+            ("Intraday leg, ZERO costs", "4.1%", "0.33", "-45%", 2),
+            ("Overnight leg, net 6bp per side", "-20.2%", "-1.81", "-99%", 2),
+            ("Intraday leg, net 6bp per side", "-23.0%", "-1.51", "-99%", 2),
+        ],
+        pit_note="Second table, the honest universe: point-in-time S&P 500 "
+                 "membership, 2007 to 2026, about 417 names a day. This is the "
+                 "one that matters, and it is where the overnight idea dies "
+                 "properly. Its gross Sharpe falls from 1.19 on the megacaps to "
+                 "0.69 here, against SPY's 0.63, so the risk-adjusted edge is "
+                 "essentially gone before costs are charged at all. Strategy C is "
+                 "absent from this table because it has not been re-run under the "
+                 "data-quality filter described in the rejected section below.",
+        metric_note="Cross-check on the pipeline: this table's equal-weight hold "
+                    "row computes 19.9%, against 19.8% in the repo's own README "
+                    "from a completely separate code path. That agreement is the "
+                    "reason to trust the overnight rows beside it.",
+        source="strategy_c.py, README.md, and overnight_vs_intraday.py "
+               "--start 1993-11-01",
     ))
 
     panels.append(dict(
@@ -263,17 +410,50 @@ def build_panels(live, macro, on_res):
                 f"negative above {be} basis points. That is a market-maker cost "
                 f"structure, not a retail one."),
             caveat=(
-                "Survivorship position, stated rather than buried. This ran on "
-                "the 65-name pool, which is controlled by construction but not "
-                "fully clean, and the gross numbers are therefore probably "
-                "flattered. That bias runs in favor of this conclusion, not "
-                "against it: a cleaner universe would lower the gross line while "
-                "the cost drag stayed exactly where it is, so the rejection only "
-                "gets stronger. The cost arithmetic itself does not depend on the "
-                "universe at all. Run --universe pit to confirm on point-in-time "
-                "membership."),
+                "CONFIRMED on the honest universe, and the confirmation was "
+                "harsher than the megacap run. Re-run on point-in-time S&P 500 "
+                "membership over 2007 to 2026, the window where the change log is "
+                "actually dense, across about 417 names a day: the overnight leg "
+                "grosses 7.9% CAGR at Sharpe 0.69, against SPY's 11.0% at 0.63 and "
+                "12.0% for equal-weight holding the same names. The impressive "
+                "Sharpe of 1.19 to 1.37 was a MEGA-CAP ARTIFACT. On a broad honest "
+                "universe the risk-adjusted edge over SPY is roughly nothing, and "
+                "net of costs it is -20.2% CAGR with breakeven down near 1 to 2 "
+                "basis points per side. This is the same shape as the sentiment "
+                "tilt: strong on a curated pool, gone on the broad one."),
             source="overnight_vs_intraday.py. Reproduce: python "
                    "overnight_vs_intraday.py --json overnight_results.json",
+        ))
+        rejected.insert(1, dict(
+            title="Trusting free price data on delisted tickers",
+            fresh=True,
+            killer=(
+                "Found while running the point-in-time confirmation above, and it "
+                "contaminates any unfiltered study on that universe. Cooper "
+                "Industries (CBE) delisted in 2012 but still prints rows in 2016 "
+                "showing a prior close of $0.005 against an open of $170 on the "
+                "same day, an implied +3,399,900% overnight return, dozens of "
+                "times. Ten of the 682 priced names print moves above 500%. "
+                "Unfiltered, those ten produced a 2,325% CAGR for the whole "
+                "portfolio."),
+            note=(
+                "The irony is the important part: point-in-time membership exists "
+                "to pull delisted names back in, and the delisted names are "
+                "precisely the ones free data serves badly. Honesty about "
+                "survivorship imports a data-quality problem. The fix used here "
+                "is a stated filter, both sides of a leg priced at $1 or above and "
+                "any single-session move beyond plus or minus 50% dropped, which "
+                "removes 2.8% of name-days."),
+            caveat=(
+                "This is a live risk to run_sp500_pit.py, not just to the overnight "
+                "study. Those broken names PASS Strategy C's eligibility filter on "
+                "13,072 name-days and reach the momentum top 10 on 190 rebalance "
+                "dates. CPWR and MI still read as eligible in 2026, years after "
+                "they stopped trading, which cannot be real. The 32.2% "
+                "point-in-time CAGR should be re-run with the same price and "
+                "return sanity filter before it is quoted again. That number has "
+                "not been shown to be wrong, it has been shown to be unverified."),
+            source="Diagnosed via overnight_vs_intraday.py --universe pit",
         ))
 
     rejected.append(dict(
@@ -582,6 +762,23 @@ tr.hero td{font-weight:700;color:var(--ink)}
 .alarm{background:rgba(208,59,59,.09);border:1px solid var(--critical);border-radius:7px;
   padding:11px 13px;margin:10px 0 0;font-size:.9rem}
 
+table.cmp td:last-child,table.cmp th:last-child{text-align:right}
+table.cmp tr.r1 td{font-weight:650}
+table.cmp tr.r2 td{color:var(--muted)}
+table.cmp tr.r0 td{font-style:italic}
+.badge.mini{font-size:.58rem;padding:2px 6px}
+.b-bm{background:transparent;color:var(--muted);border-color:var(--axis)}
+table.port td.sk{width:140px;padding:2px 8px}
+table.port td.pos{color:var(--good)}
+table.port td.neg{color:var(--critical)}
+svg.spark{display:block}
+.stale{display:flex;gap:12px;align-items:flex-start;border-radius:10px;padding:12px 16px;
+  margin:0 0 14px;border:1px solid var(--ring);border-left:5px solid var(--good);
+  background:var(--surface)}
+.stale.warn{border-left-color:var(--warning)}
+.stale.old{border-left-color:var(--critical)}
+.stale b{display:block;margin-bottom:2px}
+.stale p{margin:0;color:var(--ink2);font-size:.9rem}
 .chartwrap{background:var(--surface);border:1px solid var(--grid);border-radius:8px;
   padding:12px;margin:12px 0;overflow-x:auto}
 .lg{display:flex;gap:16px;flex-wrap:wrap;margin:0 0 8px;font-size:.82rem;color:var(--ink2)}
@@ -596,6 +793,28 @@ circle.pt:hover{r:7}
 footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--grid);
   color:var(--muted);font-size:.8rem}
 footer p{max-width:74ch}
+"""
+
+STALE_JS = """
+(function(){
+ // A generated page cannot refresh itself, so it must at least be honest about
+ // its own age. This reads the build stamp and says how old the data is, every
+ // time the page is opened, rather than letting a stale file look current.
+ var el=document.getElementById('stale'); if(!el) return;
+ var built=new Date(el.getAttribute('data-built'));
+ var hrs=(Date.now()-built.getTime())/36e5;
+ var txt=el.querySelector('p'), hd=el.querySelector('b');
+ var mins=Math.max(1,Math.round(hrs*60));
+ var age = hrs<1 ? mins+(mins===1?' minute':' minutes') :
+           hrs<48 ? hrs.toFixed(1)+' hours' : (hrs/24).toFixed(1)+' days';
+ el.classList.remove('warn','old');
+ if(hrs>72){el.classList.add('old');hd.textContent='Stale: rebuild before trusting the live panels';}
+ else if(hrs>18){el.classList.add('warn');hd.textContent='Ageing: the live panels are past a trading day old';}
+ else {hd.textContent='Fresh';}
+ txt.textContent='Built '+age+' ago ('+built.toLocaleString()+'). Market data as of '
+   +el.getAttribute('data-asof')+'. Backtested panels do not go stale; the model '
+   +'portfolio, the regime gate and the macro readings do. Rebuild: python build_dashboard.py';
+})();
 """
 
 TIP_JS = """
@@ -693,6 +912,83 @@ def esc(s):
     return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
 
+def sparkline(vals, w=132, h=30, color="var(--s1)"):
+    """Single-series mini chart. No axes: it carries shape, and the number beside
+    it carries the level. One series, so no legend (the row label names it)."""
+    vals = [v for v in vals if v == v]
+    if len(vals) < 2:
+        return ""
+    lo, hi = min(vals), max(vals)
+    rng = (hi - lo) or 1.0
+    n = len(vals)
+    pts = " ".join(f"{i/(n-1)*(w-2)+1:.1f},{h-1-((v-lo)/rng)*(h-2):.1f}"
+                   for i, v in enumerate(vals))
+    up = vals[-1] >= vals[0]
+    c = color if color != "auto" else ("var(--good)" if up else "var(--critical)")
+    lx, ly = (n - 1) / (n - 1) * (w - 2) + 1, h - 1 - ((vals[-1] - lo) / rng) * (h - 2)
+    return (f'<svg class="spark" viewBox="0 0 {w} {h}" width="{w}" height="{h}" '
+            f'aria-hidden="true"><polyline points="{pts}" fill="none" stroke="{c}" '
+            f'stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>'
+            f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="2.2" fill="{c}"/></svg>')
+
+
+def regime_chart(spy, sma, w=720, h=210):
+    """SPY against its own 200-day simple moving average: the validated gate.
+
+    Two lines on ONE axis, both in dollars. Shading marks where the gate is on.
+    """
+    n = min(len(spy), len(sma))
+    spy, sma = spy[-n:], sma[-n:]
+    if n < 10:
+        return ""
+    L, R, T, B = 54, 74, 12, 26
+    pw, ph = w - L - R, h - T - B
+    lo = min(min(spy), min(sma))
+    hi = max(max(spy), max(sma))
+    pad = (hi - lo) * .10 or 1
+    lo, hi = lo - pad, hi + pad
+
+    def X(i):
+        return L + i / (n - 1) * pw
+
+    def Y(v):
+        return T + (hi - v) / (hi - lo) * ph
+
+    o = [f'<svg viewBox="0 0 {w} {h}" role="img" aria-label="SPY against its '
+         f'200-day simple moving average">']
+    # shade the risk-on stretches
+    run = None
+    for i in range(n):
+        on = spy[i] > sma[i]
+        if on and run is None:
+            run = i
+        elif not on and run is not None:
+            o.append(f'<rect x="{X(run):.1f}" y="{T}" width="{X(i)-X(run):.1f}" '
+                     f'height="{ph}" fill="var(--good)" opacity="0.07"/>')
+            run = None
+    if run is not None:
+        o.append(f'<rect x="{X(run):.1f}" y="{T}" width="{X(n-1)-X(run):.1f}" '
+                 f'height="{ph}" fill="var(--good)" opacity="0.07"/>')
+    for frac in (0, .5, 1):
+        v = lo + (hi - lo) * frac
+        o.append(f'<line x1="{L}" y1="{Y(v):.1f}" x2="{L+pw}" y2="{Y(v):.1f}" '
+                 f'stroke="var(--grid)" stroke-width="1"/>'
+                 f'<text x="{L-8}" y="{Y(v)+3.5:.1f}" text-anchor="end" font-size="10.5" '
+                 f'fill="var(--muted)">{v:,.0f}</text>')
+    for series, col, lab, dash in ((sma, 'var(--s2)', '200d SMA', '5 4'),
+                                   (spy, 'var(--s1)', 'SPY', '')):
+        pts = " ".join(f"{X(i):.1f},{Y(v):.1f}" for i, v in enumerate(series))
+        d = f' stroke-dasharray="{dash}"' if dash else ''
+        o.append(f'<polyline points="{pts}" fill="none" stroke="{col}" '
+                 f'stroke-width="2" stroke-linejoin="round"{d}/>')
+        o.append(f'<text x="{X(n-1)+6:.1f}" y="{Y(series[-1])+4:.1f}" font-size="11" '
+                 f'font-weight="650" fill="{col}">{lab}</text>')
+    o.append(f'<text x="{L}" y="{h-6}" font-size="10.5" fill="var(--muted)">'
+             f'about 18 months, shaded where the gate says risk on</text>')
+    o.append('</svg>')
+    return "".join(o)
+
+
 def render_card(p, on_res, spy_cagr):
     label, cls, _ = TIERS[p['tier']]
     o = [f'<article class="card t-{cls}">']
@@ -725,6 +1021,35 @@ def render_card(p, on_res, spy_cagr):
         o.append(f'<p class="note">{esc(p["metric_note"])}</p>')
     if p.get('robust'):
         o.append(f'<p><strong>{esc(p["robust"])}</strong></p>')
+    if p.get('comparison'):
+        o.append('<table class="cmp"><thead><tr><th>Strategy</th><th>CAGR</th>'
+                 '<th>Sharpe</th><th>Max DD</th><th>Tier</th></tr></thead><tbody>')
+        tag = {0: ('benchmark', 'bm'), 1: ('VALIDATED', 'validated'),
+               2: ('REJECTED', 'rejected')}
+        for name, cagr, sh, dd, tr in p['comparison']:
+            lab, cls = tag[tr]
+            o.append(f'<tr class="r{tr}"><td>{esc(name)}</td><td>{esc(cagr)}</td>'
+                     f'<td>{esc(sh)}</td><td>{esc(dd)}</td>'
+                     f'<td><span class="badge b-{cls} mini">{lab}</span></td></tr>')
+        o.append('</tbody></table>')
+    if p.get('pit_note'):
+        o.append(f'<p class="note">{esc(p["pit_note"])}</p>')
+    if p.get('comparison_pit'):
+        o.append('<table class="cmp"><thead><tr><th>Strategy</th><th>CAGR</th>'
+                 '<th>Sharpe</th><th>Max DD</th><th>Tier</th></tr></thead><tbody>')
+        tag = {0: ('benchmark', 'bm'), 1: ('VALIDATED', 'validated'),
+               2: ('REJECTED', 'rejected')}
+        for name, cagr, sh, dd, tr in p['comparison_pit']:
+            lab, cls = tag[tr]
+            o.append(f'<tr class="r{tr}"><td>{esc(name)}</td><td>{esc(cagr)}</td>'
+                     f'<td>{esc(sh)}</td><td>{esc(dd)}</td>'
+                     f'<td><span class="badge b-{cls} mini">{lab}</span></td></tr>')
+        o.append('</tbody></table>')
+    if p.get('readings'):
+        o.append('<ul class="rules">'
+                 + "".join(f'<li>{esc(r)}</li>' for r in p['readings']) + '</ul>')
+    if p.get('portfolio'):
+        o.append(render_portfolio(p['_port']))
     if p.get('macro'):
         o.append(render_macro(p))
     if p.get('chart'):
@@ -751,6 +1076,60 @@ def render_card(p, on_res, spy_cagr):
         o.append(f'<div class="caveat"><h4>Where this study is weak</h4>'
                  f'{esc(p["caveat"])}</div>')
     o.append(f'<p class="src">{esc(p["source"])}</p></article>')
+    return "".join(o)
+
+
+def render_portfolio(port):
+    o = []
+    if port['risk_on']:
+        o.append(f'<p class="reading"><b>Regime gate: RISK ON.</b> '
+                 f'{port["n_eligible"]} of the 65-name pool pass the trend filter; '
+                 f'the top {port["top_n"]} by rank would be held, weighted by '
+                 f'inverse volatility.</p>')
+        o.append('<table class="port"><thead><tr><th>Name</th><th>Weight</th>'
+                 '<th>Price</th><th>vs 200d</th><th>Ann. vol</th>'
+                 '<th>6 months</th></tr></thead><tbody>')
+        for hd in port['holdings']:
+            spark = sparkline(port['history'].get(hd['ticker'], []))
+            o.append(
+                f'<tr><td><b>{esc(hd["ticker"])}</b></td>'
+                f'<td>{hd["weight"]:.1f}%</td>'
+                f'<td>${hd["price"]:,.2f}</td>'
+                f'<td class="{"pos" if hd["above_sma"] >= 0 else "neg"}">'
+                f'{hd["above_sma"]:+.1f}%</td>'
+                f'<td>{hd["vol"]:.0f}%</td><td class="sk">{spark}</td></tr>')
+        o.append('</tbody></table>')
+        o.append('<p class="note">Weights are the strategy\'s rule, not advice, '
+                 'and they say nothing about how much capital to commit. Position '
+                 'sizing in dollars is your decision, not this page\'s and not '
+                 'the model\'s.</p>')
+    else:
+        o.append('<p class="reading"><b>Regime gate: RISK OFF.</b> Strategy C '
+                 'holds no equities here. The dynamic sleeve takes gold or long '
+                 'Treasuries only while each is above its own 200-day simple '
+                 'moving average, otherwise cash.</p>')
+        o.append('<table class="port"><thead><tr><th>Sleeve</th><th>Trending?</th>'
+                 '<th>Weight</th><th>Price</th><th>vs 200d</th><th>6 months</th>'
+                 '</tr></thead><tbody>')
+        for hd in port['risk_off']:
+            spark = sparkline(port['history'].get(hd['ticker'], []))
+            o.append(
+                f'<tr><td><b>{esc(hd["ticker"])}</b></td>'
+                f'<td>{"yes, hold" if hd["trending"] else "no, skip"}</td>'
+                f'<td>{hd["weight"]:.0f}%</td><td>${hd["price"]:,.2f}</td>'
+                f'<td class="{"pos" if hd["above_sma"] >= 0 else "neg"}">'
+                f'{hd["above_sma"]:+.1f}%</td><td class="sk">{spark}</td></tr>')
+        o.append(f'<tr><td><b>Cash</b></td><td>-</td>'
+                 f'<td>{port.get("cash_pct", 0):.0f}%</td><td>-</td><td>-</td>'
+                 f'<td>-</td></tr>')
+        o.append('</tbody></table>')
+
+    hist, sma = port['history'].get('SPY', []), port['history'].get('SPY_SMA200', [])
+    if hist and sma:
+        o.append('<div class="chartwrap"><div class="lg">'
+                 '<span><i style="background:var(--s1)"></i>SPY</span>'
+                 '<span><i style="background:var(--s2)"></i>200-day simple moving '
+                 'average</span></div>' + regime_chart(hist, sma) + '</div>')
     return "".join(o)
 
 
@@ -817,7 +1196,7 @@ def render_macro(p):
     return "".join(o)
 
 
-def render_html(panels, live, macro, on_res, dry_run, dry_src):
+def render_html(panels, live, macro, on_res, dry_run, dry_src, port=None):
     spy_cagr = 10.86
     if on_res:
         for r in on_res.get('universe_rows', []):
@@ -828,6 +1207,8 @@ def render_html(panels, live, macro, on_res, dry_run, dry_src):
     for p in panels:
         if p.get('macro'):
             p['_macro'], p['_live'] = macro, live
+        if p.get('portfolio'):
+            p['_port'] = port
         if p['tier'] == 2 and p.get('fresh') and on_res:
             p['chart'] = (
                 '<div class="chartwrap"><div class="lg">'
@@ -852,6 +1233,12 @@ def render_html(panels, live, macro, on_res, dry_run, dry_src):
     o.append(f'<p class="sub">Every panel carries its evidence tier on its face. '
              f'Market data as of {live["asof"]}. Built '
              f'{datetime.now():%Y-%m-%d %H:%M}.</p>')
+
+    o.append(f'<div class="stale" id="stale" data-built="{datetime.now().isoformat()}" '
+             f'data-asof="{live["asof"]}"><div><b>Checking freshness...</b>'
+             f'<p>If this line does not update, JavaScript is blocked; the build '
+             f'time is {datetime.now():%Y-%m-%d %H:%M} and market data is as of '
+             f'{live["asof"]}.</p></div></div>')
 
     ok = dry_run is True
     o.append(f'<div class="safety{"" if ok else " bad"}">'
@@ -898,11 +1285,11 @@ def render_html(panels, live, macro, on_res, dry_run, dry_src):
              '<p>Rebuild with <code>python build_dashboard.py</code>. Refresh the '
              'overnight study with <code>python overnight_vs_intraday.py --json '
              'overnight_results.json</code>.</p></footer>')
-    o.append(f'</div><script>{TIP_JS}</script></body></html>')
+    o.append(f'</div><script>{STALE_JS}{TIP_JS}</script></body></html>')
     return "".join(o)
 
 
-def render_md(panels, live, macro, on_res, dry_run, dry_src):
+def render_md(panels, live, macro, on_res, dry_run, dry_src, port=None):
     """Plain-text mirror. This is the file a future agent will actually read."""
     r = live['regime']
     L = ["# Trading dashboard", "",
@@ -981,6 +1368,46 @@ def render_md(panels, live, macro, on_res, dry_run, dry_src):
                     L.append(f"{head}:")
                     L += [f"- {x}" for x in p[key]]
                     L.append("")
+            if p.get('comparison'):
+                tag = {0: 'benchmark', 1: 'VALIDATED', 2: 'REJECTED'}
+                L += ["| Strategy | CAGR | Sharpe | Max DD | Tier |",
+                      "|---|---:|---:|---:|---|"]
+                L += [f"| {n} | {c} | {s_} | {d} | {tag[t]} |"
+                      for n, c, s_, d, t in p['comparison']]
+                L.append("")
+            if p.get('pit_note'):
+                L += [p['pit_note'], ""]
+            if p.get('comparison_pit'):
+                tag = {0: 'benchmark', 1: 'VALIDATED', 2: 'REJECTED'}
+                L += ["| Strategy (point-in-time universe, 2007+) | CAGR | Sharpe | Max DD | Tier |",
+                      "|---|---:|---:|---:|---|"]
+                L += [f"| {n} | {c} | {s_} | {d} | {tag[t]} |"
+                      for n, c, s_, d, t in p['comparison_pit']]
+                L.append("")
+            if p.get('readings'):
+                L += [f"- {r}" for r in p['readings']] + [""]
+            if p.get('portfolio') and port:
+                if port['risk_on']:
+                    L += [f"Regime gate: RISK ON. {port['n_eligible']} of 65 names "
+                          f"pass the trend filter; top {port['top_n']} held, "
+                          f"inverse-volatility weighted. As of {port['asof']}.", "",
+                          "| Name | Weight | Price | vs 200d | Ann. vol |",
+                          "|---|---:|---:|---:|---:|"]
+                    L += [f"| {h['ticker']} | {h['weight']:.1f}% | "
+                          f"${h['price']:,.2f} | {h['above_sma']:+.1f}% | "
+                          f"{h['vol']:.0f}% |" for h in port['holdings']]
+                else:
+                    L += [f"Regime gate: RISK OFF as of {port['asof']}. No equities. "
+                          f"Dynamic sleeve holds gold or long Treasuries only while "
+                          f"each is above its own 200-day simple moving average.", "",
+                          "| Sleeve | Trending | Weight | Price | vs 200d |",
+                          "|---|---|---:|---:|---:|"]
+                    L += [f"| {h['ticker']} | {'yes' if h['trending'] else 'no'} | "
+                          f"{h['weight']:.0f}% | ${h['price']:,.2f} | "
+                          f"{h['above_sma']:+.1f}% |" for h in port['risk_off']]
+                    L.append(f"| Cash | - | {port.get('cash_pct', 0):.0f}% | - | - |")
+                L += ["", "Weights are the strategy's rule, not advice. How much "
+                      "capital to commit is your decision.", ""]
             if p.get('metrics'):
                 L += ["| Variant | CAGR | Sharpe | Max DD | Calmar |",
                       "|---|---:|---:|---:|---:|"]
@@ -1008,6 +1435,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--out', default=str(DEFAULT_OUT))
+    ap.add_argument('--no-portfolio', action='store_true',
+                    help='skip the live model-portfolio panel (faster rebuild)')
     args = ap.parse_args()
 
     dry_run, dry_src = read_dry_run()
@@ -1019,21 +1448,30 @@ def main():
     live = fetch_live()
     macro = macro_reading(live)
 
+    port = None
+    if not args.no_portfolio:
+        print("Computing the current Strategy C model portfolio...")
+        try:
+            port = current_portfolio()
+        except Exception as exc:                      # never fail the whole build
+            print(f"WARNING: model portfolio unavailable ({exc.__class__.__name__}: "
+                  f"{exc}). The panel will be omitted.")
+
     res_path = REPO / "overnight_results.json"
     on_res = json.loads(res_path.read_text()) if res_path.exists() else None
     if on_res is None:
         print("NOTE: overnight_results.json not found. The overnight panel will be "
               "omitted. Run: python overnight_vs_intraday.py --json overnight_results.json")
 
-    panels = build_panels(live, macro, on_res)
+    panels = build_panels(live, macro, on_res, port)
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     html = out / "TRADING-DASHBOARD.html"
     md = out / "TRADING-DASHBOARD.md"
-    html.write_text(render_html(panels, live, macro, on_res, dry_run, dry_src),
+    html.write_text(render_html(panels, live, macro, on_res, dry_run, dry_src, port),
                     encoding="utf-8")
-    md.write_text(render_md(panels, live, macro, on_res, dry_run, dry_src),
+    md.write_text(render_md(panels, live, macro, on_res, dry_run, dry_src, port),
                   encoding="utf-8")
     print(f"Wrote {html}")
     print(f"Wrote {md}")
