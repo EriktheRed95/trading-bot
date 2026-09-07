@@ -1,0 +1,230 @@
+{
+  "regime": {
+    "risk_on": true,
+    "spy": 770.1900024414062,
+    "sma200": 709.8685516357422,
+    "asof": "2026-09-04"
+  },
+  "rows": [
+    {
+      "ticker": "MU",
+      "price": 1016.5900268554688,
+      "sma200": 606.3405877685547,
+      "pct_vs_sma": 67.65990061735894,
+      "mom12": 569.0861955115065,
+      "mom6": 125.54034848846109,
+      "vol": 98.46837861862535,
+      "verdict": "ELIGIBLE",
+      "fragile": true,
+      "reason": "passes the trend rules"
+    },
+    {
+      "ticker": "AAOI",
+      "price": 105.52999877929688,
+      "sma200": 101.51035020828247,
+      "pct_vs_sma": 3.9598411026725344,
+      "mom12": 465.3605926503552,
+      "mom6": 22.608932846915188,
+      "vol": 137.04960442640342,
+      "verdict": "ELIGIBLE",
+      "fragile": true,
+      "reason": "passes the trend rules"
+    },
+    {
+      "ticker": "MRVL",
+      "price": 223.5500030517578,
+      "sma200": 151.71072845458986,
+      "pct_vs_sma": 47.35279787327033,
+      "mom12": 246.101370711742,
+      "mom6": 136.24766291062232,
+      "vol": 96.47949552330374,
+      "verdict": "ELIGIBLE",
+      "fragile": true,
+      "reason": "passes the trend rules"
+    },
+    {
+      "ticker": "ALOY",
+      "price": 10.100000381469727,
+      "sma200": 11.189224987030029,
+      "pct_vs_sma": -9.73458489594119,
+      "mom12": 90.52795572581833,
+      "mom6": -21.245182812266826,
+      "vol": 131.44304673093825,
+      "verdict": "AVOID",
+      "fragile": true,
+      "reason": "below its 200-day simple moving average, so in a downtrend"
+    },
+    {
+      "ticker": "USAR",
+      "price": 17.610000610351562,
+      "sma200": 19.238550033569336,
+      "pct_vs_sma": -8.465032033994857,
+      "mom12": 39.466092370309404,
+      "mom6": 3.313740617699623,
+      "vol": 84.51934596479875,
+      "verdict": "AVOID",
+      "fragile": true,
+      "reason": "below its 200-day simple moving average, so in a downtrend"
+    },
+    {
+      "ticker": "MP",
+      "price": 54.529998779296875,
+      "sma200": 57.65024995803833,
+      "pct_vs_sma": -5.412381006175304,
+      "mom12": -18.937349359539247,
+      "mom6": -15.240462260339116,
+      "vol": 65.38406928868157,
+      "verdict": "AVOID",
+      "fragile": true,
+      "reason": "below its 200-day simple moving average, so in a downtrend; 12-month-minus-1-month momentum is negative or flat"
+    }
+  ],
+  "counts": {
+    "MRVL": 1,
+    "MU": 1,
+    "AAOI": 1,
+    "ALOY": 1,
+    "USAR": 2,
+    "MP": 2
+  },
+  "where": {
+    "MRVL": [
+      "Nvidia-Driven AI Investment Picks"
+    ],
+    "MU": [
+      "Nvidia-Driven AI Investment Picks"
+    ],
+    "AAOI": [
+      "Nvidia-Driven AI Investment Picks"
+    ],
+    "ALOY": [
+      "Stock Investment Hype"
+    ],
+    "USAR": [
+      "Stock Investment Hype",
+      "Rare earths and United States supply-chain reshoring"
+    ],
+    "MP": [
+      "Stock Investment Hype",
+      "Rare earths and United States supply-chain reshoring"
+    ]
+  },
+  "sources": [
+    {
+      "id": "ig-DZeH44TlK3Z",
+      "platform": "instagram",
+      "url": "https://www.instagram.com/p/DZeH44TlK3Z",
+      "title": "Nvidia-Driven AI Investment Picks",
+      "triaged": "2026-09-07",
+      "substance": "medium",
+      "substance_note": "Cites specific, checkable financial figures. That is what made it auditable, and it is the reason this one is worth more than Video B even though one of its numbers is unsupported.",
+      "tickers": [
+        "MRVL",
+        "MU",
+        "AAOI"
+      ],
+      "markers": [
+        "no_position_disclosure",
+        "no_methodology"
+      ],
+      "claims": [
+        {
+          "claim": "Marvell acquired Polariton Technologies on April 22, 2026",
+          "verdict": "VERIFIED",
+          "checked_against": "Marvell investor relations press release and trade coverage",
+          "note": "Real acquisition, date exact."
+        },
+        {
+          "claim": "That acquisition cost 5.5 billion dollars",
+          "verdict": "UNSUPPORTED",
+          "checked_against": "Marvell press release and trade coverage",
+          "note": "Financial terms of the transaction were never disclosed. The figure is not public, so it cannot be confirmed or denied. Treat as invented until Marvell says otherwise."
+        },
+        {
+          "claim": "Micron fiscal Q2 2026 revenue nearly tripled to 23.9 billion dollars",
+          "verdict": "VERIFIED",
+          "checked_against": "SEC EDGAR companyfacts, Micron CIK 0000723125, form 10-Q",
+          "note": "CORRECTED 2026-09-07. An earlier triage marked this WRONG and gave 8.71 billion as the actual figure. The filing says otherwise: the quarter ended 2026-02-26 reported 23.86 billion dollars, and the year-ago quarter ended 2025-02-27 reported 8.05 billion, which is a 2.96x increase. The video is right on both the number and the word 'tripled'. The 8.71 billion figure is fiscal Q1 2025, five quarters earlier."
+        },
+        {
+          "claim": "Micron fiscal Q3 2026 guidance of 33.5 billion dollars",
+          "verdict": "UNVERIFIED",
+          "checked_against": "SEC EDGAR companyfacts, form 10-Q",
+          "note": "Guidance is issued in an earnings release, not tagged in the filings, so it is not checkable from EDGAR alone. What IS checkable: actual fiscal Q3 2026 revenue was 41.46 billion, and the first three quarters of fiscal 2026 total about 78.96 billion. So 33.5 billion is neither the quarterly actual nor a plausible full-year figure for fiscal 2026. Do not repeat this number without the earnings release in hand."
+        },
+        {
+          "claim": "Micron 2026 high bandwidth memory production is sold out",
+          "verdict": "VERIFIED",
+          "checked_against": "Company statements, binding contracts",
+          "note": "Reported as under binding contracts."
+        }
+      ]
+    },
+    {
+      "id": "ig-DcO3LwLAbaX",
+      "platform": "instagram",
+      "url": "https://www.instagram.com/p/DcO3LwLAbaX",
+      "title": "Stock Investment Hype",
+      "triaged": "2026-09-07",
+      "substance": "low",
+      "substance_note": "No methodology of any kind. Track record asserted with no evidence, no trade logs, no timeframes.",
+      "tickers": [
+        "ALOY",
+        "USAR",
+        "MP"
+      ],
+      "markers": [
+        "track_record_no_evidence",
+        "specific_entry_prices",
+        "no_position_disclosure",
+        "emotional_or_political_framing",
+        "no_methodology"
+      ],
+      "claims": [
+        {
+          "claim": "Plus 600 percent on INTC entered at 20 dollars",
+          "verdict": "UNVERIFIABLE",
+          "checked_against": "Nothing to check against",
+          "note": "No trade log, no dates, no position size. An unfalsifiable claim is not a track record."
+        },
+        {
+          "claim": "Plus 90 percent on DELL entered at 230 dollars",
+          "verdict": "UNVERIFIABLE",
+          "checked_against": "Nothing to check against",
+          "note": "Same. No evidence offered."
+        },
+        {
+          "claim": "Plus 70 percent on MU entered at 740 dollars",
+          "verdict": "UNVERIFIABLE",
+          "checked_against": "Nothing to check against",
+          "note": "Same. No evidence offered."
+        }
+      ]
+    },
+    {
+      "id": "ig-rare-earths-batch1",
+      "platform": "instagram",
+      "url": "",
+      "title": "Rare earths and United States supply-chain reshoring",
+      "triaged": "2026-09-07",
+      "substance": "low",
+      "substance_note": "A narrative pitch, not a strategy. Contains no rules, no entries, no exits.",
+      "tickers": [
+        "MP",
+        "USAR"
+      ],
+      "markers": [
+        "no_position_disclosure",
+        "no_methodology"
+      ],
+      "claims": []
+    }
+  ],
+  "markers": {
+    "track_record_no_evidence": "Claims past wins with no trade log, timeframe, or verifiable record",
+    "specific_entry_prices": "Names exact prices to buy at, which converts a narrative into an instruction",
+    "no_position_disclosure": "Does not say whether the creator holds the names being pitched",
+    "emotional_or_political_framing": "Uses outrage, patriotism, or urgency as support instead of evidence",
+    "no_methodology": "No stated rule for how the names were chosen or when to exit"
+  }
+}

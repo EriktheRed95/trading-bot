@@ -1,0 +1,98 @@
+{
+  "_README": "Ledger of stock tips harvested from saved short-form content. This file is EVIDENCE ABOUT THE CONTENT, not a signal source. Every number here whose 'provenance' is 'content' is a claim made in a video and is never treated as equivalent to a figure from a filing. Verdicts on tickers come from tip_intake.py running Erik's own Strategy C rules, never from the video.",
+  "promotional_markers": {
+    "track_record_no_evidence": "Claims past wins with no trade log, timeframe, or verifiable record",
+    "specific_entry_prices": "Names exact prices to buy at, which converts a narrative into an instruction",
+    "no_position_disclosure": "Does not say whether the creator holds the names being pitched",
+    "emotional_or_political_framing": "Uses outrage, patriotism, or urgency as support instead of evidence",
+    "no_methodology": "No stated rule for how the names were chosen or when to exit"
+  },
+  "sources": [
+    {
+      "id": "ig-DZeH44TlK3Z",
+      "platform": "instagram",
+      "url": "https://www.instagram.com/p/DZeH44TlK3Z",
+      "title": "Nvidia-Driven AI Investment Picks",
+      "triaged": "2026-09-07",
+      "substance": "medium",
+      "substance_note": "Cites specific, checkable financial figures. That is what made it auditable, and it is the reason this one is worth more than Video B even though one of its numbers is unsupported.",
+      "tickers": ["MRVL", "MU", "AAOI"],
+      "markers": ["no_position_disclosure", "no_methodology"],
+      "claims": [
+        {
+          "claim": "Marvell acquired Polariton Technologies on April 22, 2026",
+          "verdict": "VERIFIED",
+          "checked_against": "Marvell investor relations press release and trade coverage",
+          "note": "Real acquisition, date exact."
+        },
+        {
+          "claim": "That acquisition cost 5.5 billion dollars",
+          "verdict": "UNSUPPORTED",
+          "checked_against": "Marvell press release and trade coverage",
+          "note": "Financial terms of the transaction were never disclosed. The figure is not public, so it cannot be confirmed or denied. Treat as invented until Marvell says otherwise."
+        },
+        {
+          "claim": "Micron fiscal Q2 2026 revenue nearly tripled to 23.9 billion dollars",
+          "verdict": "VERIFIED",
+          "checked_against": "SEC EDGAR companyfacts, Micron CIK 0000723125, form 10-Q",
+          "note": "CORRECTED 2026-09-07. An earlier triage marked this WRONG and gave 8.71 billion as the actual figure. The filing says otherwise: the quarter ended 2026-02-26 reported 23.86 billion dollars, and the year-ago quarter ended 2025-02-27 reported 8.05 billion, which is a 2.96x increase. The video is right on both the number and the word 'tripled'. The 8.71 billion figure is fiscal Q1 2025, five quarters earlier."
+        },
+        {
+          "claim": "Micron fiscal Q3 2026 guidance of 33.5 billion dollars",
+          "verdict": "UNVERIFIED",
+          "checked_against": "SEC EDGAR companyfacts, form 10-Q",
+          "note": "Guidance is issued in an earnings release, not tagged in the filings, so it is not checkable from EDGAR alone. What IS checkable: actual fiscal Q3 2026 revenue was 41.46 billion, and the first three quarters of fiscal 2026 total about 78.96 billion. So 33.5 billion is neither the quarterly actual nor a plausible full-year figure for fiscal 2026. Do not repeat this number without the earnings release in hand."
+        },
+        {
+          "claim": "Micron 2026 high bandwidth memory production is sold out",
+          "verdict": "VERIFIED",
+          "checked_against": "Company statements, binding contracts",
+          "note": "Reported as under binding contracts."
+        }
+      ]
+    },
+    {
+      "id": "ig-DcO3LwLAbaX",
+      "platform": "instagram",
+      "url": "https://www.instagram.com/p/DcO3LwLAbaX",
+      "title": "Stock Investment Hype",
+      "triaged": "2026-09-07",
+      "substance": "low",
+      "substance_note": "No methodology of any kind. Track record asserted with no evidence, no trade logs, no timeframes.",
+      "tickers": ["ALOY", "USAR", "MP"],
+      "markers": ["track_record_no_evidence", "specific_entry_prices", "no_position_disclosure", "emotional_or_political_framing", "no_methodology"],
+      "claims": [
+        {
+          "claim": "Plus 600 percent on INTC entered at 20 dollars",
+          "verdict": "UNVERIFIABLE",
+          "checked_against": "Nothing to check against",
+          "note": "No trade log, no dates, no position size. An unfalsifiable claim is not a track record."
+        },
+        {
+          "claim": "Plus 90 percent on DELL entered at 230 dollars",
+          "verdict": "UNVERIFIABLE",
+          "checked_against": "Nothing to check against",
+          "note": "Same. No evidence offered."
+        },
+        {
+          "claim": "Plus 70 percent on MU entered at 740 dollars",
+          "verdict": "UNVERIFIABLE",
+          "checked_against": "Nothing to check against",
+          "note": "Same. No evidence offered."
+        }
+      ]
+    },
+    {
+      "id": "ig-rare-earths-batch1",
+      "platform": "instagram",
+      "url": "",
+      "title": "Rare earths and United States supply-chain reshoring",
+      "triaged": "2026-09-07",
+      "substance": "low",
+      "substance_note": "A narrative pitch, not a strategy. Contains no rules, no entries, no exits.",
+      "tickers": ["MP", "USAR"],
+      "markers": ["no_position_disclosure", "no_methodology"],
+      "claims": []
+    }
+  ]
+}

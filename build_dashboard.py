@@ -183,7 +183,7 @@ def macro_reading(live):
 
 # ------------------------------------------------------------------- the panels
 
-def build_panels(live, macro, on_res, port=None):
+def build_panels(live, macro, on_res, port=None, tips=None):
     """Every panel, each stamped with its tier. Order is deliberate."""
     ov = {r['label']: r for r in on_res.get('universe_rows', [])} if on_res else {}
     ov_single = ({r['label']: r for r in on_res['single_name']['rows']}
@@ -661,28 +661,50 @@ def build_panels(live, macro, on_res, port=None):
     ))
 
     # ---------------------------------------------------------- watchlist
-    s = live['series']
-    panels.append(dict(
-        tier=5, title="Watchlist: rare earths",
-        subtitle="A thesis to research, not dashboard logic.",
-        body=[
-            "The pitch was United States supply-chain reshoring in rare earth "
-            "elements, naming MP Materials (MP) and USA Rare Earth (USAR). It is "
-            "a narrative, not a strategy: it contains no rules.",
-            "Deliberately no verdict is computed here. Prices below are raw "
-            "observation so the names are not invisible, and nothing more.",
-        ],
-        watch=[(t, s[t]['last'], s[t]['pct_60d']) for t in ('MP', 'USAR') if t in s],
-        actions=[
-            "Run the fundamental-check skill on MP and USAR for the quality and "
-            "valuation read.",
-            "Run the financial-researcher skill for the filings-level memo.",
-            "Run the trade-identifier skill if you want the Strategy C rules "
-            "verdict, which is the only verdict in this stack with a backtest "
-            "behind it.",
-        ],
-        source="Video derived. Route through the existing skills.",
-    ))
+    if tips:
+        counts = tips.get('counts', {})
+        panels.append(dict(
+            tier=5, title="Stock tips from saved content",
+            subtitle="Run through his rules, not the creator's. Most do not survive.",
+            tipverdicts=True,
+            body=[
+                "Saved short-form finance content is a recurring input, so it gets "
+                "a route rather than an argument each time. Tickers go in, and "
+                "what comes out is Strategy C's own verdict: market regime gate, "
+                "per-name 200-day trend filter, 12-month-minus-1-month momentum, "
+                "and a volatility fragility flag. The video gets no vote.",
+                "These names are NOT signals and are not wired into anything. They "
+                "are a watchlist that has to earn its place through rules that "
+                "were backtested, and most of them do not.",
+            ],
+            actions=[
+                "For quality and valuation rather than trend, run the "
+                "fundamental-check and financial-researcher skills, which read "
+                "SEC EDGAR filings directly.",
+                "A name that passes here has passed a TREND test only. Eligible "
+                "does not mean it will go up, it means it is not in a downtrend "
+                "with negative momentum.",
+            ],
+            source="tip_intake.py, content_tips.json. Reproduce: python "
+                   "tip_intake.py --json tip_intake.json",
+        ))
+        panels.append(dict(
+            tier=5, title="How the video numbers checked out",
+            subtitle="Provenance matters more than the verdicts.",
+            claimledger=True,
+            body=[
+                "Every figure below originated in a video. A claim that checks "
+                "out is still content-sourced, and content-sourced numbers can "
+                "never reach the validated tier no matter how well they verify. "
+                "That rule is the point of this panel.",
+                "The danger is not wholesale fabrication, which is easy to spot. "
+                "It is the mixture: genuinely verifiable facts sitting beside an "
+                "unsupported number, where the checkable parts lend credibility "
+                "to the rest.",
+            ],
+            source="content_tips.json. Verified against SEC EDGAR companyfacts "
+                   "(Micron CIK 0000723125) and company press releases",
+        ))
 
     return panels
 
@@ -836,6 +858,12 @@ tr.hero td{font-weight:700;color:var(--ink)}
 .cell.here.severe{border:2px solid var(--critical);background:rgba(208,59,59,.08)}
 .q2{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:10px 0}
 .reading{margin:12px 0 0;font-size:.9rem;color:var(--ink2)}
+.chip{display:inline-block;font-size:.62rem;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;padding:2px 6px;border-radius:3px;margin-right:4px;
+  border:1px solid var(--axis);color:var(--muted)}
+.chip.good{border-color:var(--good);color:var(--good)}
+.chip.warn{border-color:var(--warning);color:var(--warning)}
+.chip.crit{border-color:var(--critical);color:var(--critical)}
 .reading b{color:var(--ink)}
 @media (max-width:620px){.q2{grid-template-columns:1fr}}
 .alarm{background:rgba(208,59,59,.09);border:1px solid var(--critical);border-radius:7px;
@@ -1130,6 +1158,10 @@ def render_card(p, on_res, spy_cagr):
                  + "".join(f'<li>{esc(r)}</li>' for r in p['readings']) + '</ul>')
     if p.get('portfolio'):
         o.append(render_portfolio(p['_port']))
+    if p.get('tipverdicts'):
+        o.append(render_tips(p['_tips']))
+    if p.get('claimledger'):
+        o.append(render_claims(p['_tips']))
     if p.get('macro'):
         o.append(render_macro(p))
     if p.get('chart'):
@@ -1215,6 +1247,82 @@ def render_portfolio(port):
     return "".join(o)
 
 
+def render_tips(tips):
+    counts = tips.get('counts', {})
+    where = tips.get('where', {})
+    o = ['<table class="port"><thead><tr><th>Ticker</th><th>His verdict</th>'
+         '<th>Price</th><th>vs 200d</th><th>12-1 mom</th><th>Ann. vol</th>'
+         '<th>Flags</th></tr></thead><tbody>']
+    for r in tips.get('rows', []):
+        if r.get('verdict') == 'NO DATA':
+            continue
+        n = counts.get(r['ticker'], 0)
+        flags = []
+        if r.get('fragile'):
+            flags.append('<span class="chip warn">FRAGILE</span>')
+        if n >= 2:
+            flags.append(f'<span class="chip crit">RECURS x{n}</span>')
+        elig = r['verdict'] == 'ELIGIBLE'
+        o.append(
+            f'<tr><td><b>{esc(r["ticker"])}</b></td>'
+            f'<td class="{"pos" if elig else "neg"}"><b>{esc(r["verdict"])}</b></td>'
+            f'<td>${r["price"]:,.2f}</td>'
+            f'<td class="{"pos" if r["pct_vs_sma"] >= 0 else "neg"}">'
+            f'{r["pct_vs_sma"]:+.0f}%</td>'
+            f'<td>{r["mom12"]:+.0f}%</td><td>{r["vol"]:.0f}%</td>'
+            f'<td>{"".join(flags)}</td></tr>')
+    o.append('</tbody></table>')
+
+    recur = {t: n for t, n in counts.items() if n >= 2}
+    if recur:
+        items = ", ".join(f"{t} appears in {n} saved sources" for t, n in recur.items())
+        o.append(f'<div class="killer"><b>Recurrence is a CAUTION flag, not a buy '
+                 f'signal.</b> {esc(items)}. A name showing up repeatedly across '
+                 f'saved content is evidence it is being MARKETED, which is '
+                 f'orthogonal to whether it is a good business. Coordinated '
+                 f'promotion and organic consensus look identical one video at a '
+                 f'time. They only separate when you look at the whole corpus, '
+                 f'which is the only reason this row exists.</div>')
+    for t, n in recur.items():
+        o.append(f'<p class="note">{esc(t)}: {esc(" | ".join(where.get(t, [])))}</p>')
+    return "".join(o)
+
+
+def render_claims(tips):
+    style = {'VERIFIED': ('pos', 'good'), 'UNSUPPORTED': ('neg', 'crit'),
+             'UNVERIFIED': ('', 'warn'), 'UNVERIFIABLE': ('neg', 'crit'),
+             'WRONG': ('neg', 'crit'), 'CONFLATED': ('', 'warn')}
+    o = []
+    for src in tips.get('sources', []):
+        marks = src.get('markers', [])
+        total = len(tips.get('markers', {})) or 5
+        o.append(f'<p class="reading"><b>{esc(src.get("title", src["id"]))}</b> '
+                 f'&mdash; substance {esc(src.get("substance", "?"))}, '
+                 f'{len(marks)} of {total} promotional markers present.</p>'
+                 .replace("&mdash;", ","))
+        if marks:
+            o.append('<p class="note">Markers: '
+                     + esc(", ".join(m.replace("_", " ") for m in marks)) + '</p>')
+        if not src.get('claims'):
+            continue
+        o.append('<table class="port"><thead><tr><th>Claim</th><th>Check</th>'
+                 '<th>Provenance</th></tr></thead><tbody>')
+        for c in src['claims']:
+            cls, chip = style.get(c['verdict'], ('', 'warn'))
+            o.append(f'<tr><td>{esc(c["claim"])}</td>'
+                     f'<td class="{cls}"><span class="chip {chip}">'
+                     f'{esc(c["verdict"])}</span></td>'
+                     f'<td><span class="chip">content sourced</span></td></tr>')
+            if c.get('note'):
+                o.append(f'<tr><td colspan="3" class="note">{esc(c["note"])}</td></tr>')
+        o.append('</tbody></table>')
+    o.append('<p class="note">Every row above is content-sourced by definition. '
+             'A VERIFIED check means the claim survived comparison against a '
+             'filing or a company release, not that the number is promoted to '
+             'the validated tier. Nothing from a video ever is.</p>')
+    return "".join(o)
+
+
 def render_macro(p):
     m, live = p['_macro'], p['_live']
     s = live['series']
@@ -1278,7 +1386,7 @@ def render_macro(p):
     return "".join(o)
 
 
-def render_html(panels, live, macro, on_res, dry_run, dry_src, port=None):
+def render_html(panels, live, macro, on_res, dry_run, dry_src, port=None, tips=None):
     spy_cagr = 10.86
     if on_res:
         for r in on_res.get('universe_rows', []):
@@ -1291,6 +1399,8 @@ def render_html(panels, live, macro, on_res, dry_run, dry_src, port=None):
             p['_macro'], p['_live'] = macro, live
         if p.get('portfolio'):
             p['_port'] = port
+        if p.get('tipverdicts') or p.get('claimledger'):
+            p['_tips'] = tips
         if p['tier'] == 2 and p.get('fresh') and on_res:
             p['chart'] = (
                 '<div class="chartwrap"><div class="lg">'
@@ -1375,7 +1485,7 @@ def render_html(panels, live, macro, on_res, dry_run, dry_src, port=None):
     return "".join(o)
 
 
-def render_md(panels, live, macro, on_res, dry_run, dry_src, port=None):
+def render_md(panels, live, macro, on_res, dry_run, dry_src, port=None, tips=None):
     """Plain-text mirror. This is the file a future agent will actually read."""
     r = live['regime']
     L = ["# Trading dashboard", "",
@@ -1507,6 +1617,52 @@ def render_md(panels, live, macro, on_res, dry_run, dry_src, port=None):
                 L += [f"**The blocker:** {p['blocker']}", ""]
             if p.get('caveat'):
                 L += [f"**Where this study is weak:** {p['caveat']}", ""]
+            if p.get('tipverdicts') and tips:
+                counts = tips.get('counts', {})
+                L += ["| Ticker | His verdict | Price | vs 200d | 12-1 mom | Ann. vol | Flags |",
+                      "|---|---|---:|---:|---:|---:|---|"]
+                for r in tips.get('rows', []):
+                    if r.get('verdict') == 'NO DATA':
+                        continue
+                    n = counts.get(r['ticker'], 0)
+                    fl = []
+                    if r.get('fragile'):
+                        fl.append("FRAGILE")
+                    if n >= 2:
+                        fl.append(f"RECURS x{n}")
+                    L.append(f"| {r['ticker']} | {r['verdict']} | "
+                             f"${r['price']:,.2f} | {r['pct_vs_sma']:+.0f}% | "
+                             f"{r['mom12']:+.0f}% | {r['vol']:.0f}% | "
+                             f"{', '.join(fl)} |")
+                L.append("")
+                recur = {t: n for t, n in counts.items() if n >= 2}
+                if recur:
+                    L += ["**Recurrence is a CAUTION flag, not a buy signal.** "
+                          + ", ".join(f"{t} appears in {n} saved sources"
+                                      for t, n in recur.items())
+                          + ". A name showing up repeatedly is evidence it is being "
+                            "MARKETED, which is orthogonal to whether it is a good "
+                            "business.", ""]
+            if p.get('claimledger') and tips:
+                for src in tips.get('sources', []):
+                    total = len(tips.get('markers', {})) or 5
+                    L += [f"**{src.get('title', src['id'])}**, substance "
+                          f"{src.get('substance', '?')}, {len(src.get('markers', []))} "
+                          f"of {total} promotional markers.", ""]
+                    if not src.get('claims'):
+                        continue
+                    L += ["| Claim | Check | Provenance |", "|---|---|---|"]
+                    L += [f"| {c['claim']} | {c['verdict']} | content sourced |"
+                          for c in src['claims']]
+                    L.append("")
+                    for c in src['claims']:
+                        if c.get('note'):
+                            L.append(f"- {c['verdict']}: {c['note']}")
+                    L.append("")
+                L += ["Every row above is content-sourced by definition. A VERIFIED "
+                      "check means the claim survived comparison against a filing, "
+                      "not that it is promoted to the validated tier. Nothing from "
+                      "a video ever is.", ""]
             if p.get('watch'):
                 for tk, last, pct in p['watch']:
                     L.append(f"- {tk}: ${last:,.2f}, {pct:+.1f}% over "
@@ -1546,21 +1702,29 @@ def main():
             print(f"WARNING: model portfolio unavailable ({exc.__class__.__name__}: "
                   f"{exc}). The panel will be omitted.")
 
+    tips = None
+    tip_path = REPO / "tip_intake.json"
+    if tip_path.exists():
+        tips = json.loads(tip_path.read_text(encoding="utf-8"))
+    else:
+        print("NOTE: tip_intake.json not found. Run: python tip_intake.py "
+              "--json tip_intake.json")
+
     res_path = REPO / "overnight_results.json"
     on_res = json.loads(res_path.read_text()) if res_path.exists() else None
     if on_res is None:
         print("NOTE: overnight_results.json not found. The overnight panel will be "
               "omitted. Run: python overnight_vs_intraday.py --json overnight_results.json")
 
-    panels = build_panels(live, macro, on_res, port)
+    panels = build_panels(live, macro, on_res, port, tips)
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     html = out / "TRADING-DASHBOARD.html"
     md = out / "TRADING-DASHBOARD.md"
-    html.write_text(render_html(panels, live, macro, on_res, dry_run, dry_src, port),
+    html.write_text(render_html(panels, live, macro, on_res, dry_run, dry_src, port, tips),
                     encoding="utf-8")
-    md.write_text(render_md(panels, live, macro, on_res, dry_run, dry_src, port),
+    md.write_text(render_md(panels, live, macro, on_res, dry_run, dry_src, port, tips),
                   encoding="utf-8")
     print(f"Wrote {html}")
     print(f"Wrote {md}")
