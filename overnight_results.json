@@ -1,0 +1,194 @@
+{
+  "generated": "2026-09-07",
+  "cost_bps_per_side": 6,
+  "open_penalty": 1.0,
+  "universe": "megacap",
+  "single_name": {
+    "ticker": "MU",
+    "rows": [
+      {
+        "label": "Overnight only  (ZERO costs)",
+        "total_return": 384729533.3341227,
+        "cagr": 43.17255596083176,
+        "ann_vol": 28.292434022384615,
+        "sharpe": 1.4106077511735222,
+        "max_drawdown": -53.68605174346563,
+        "calmar": 0.8041670891934511,
+        "years": 42.25051334702259
+      },
+      {
+        "label": "Intraday only   (ZERO costs)",
+        "total_return": -99.98043786223896,
+        "cagr": -18.296436579613072,
+        "ann_vol": 53.05707213919606,
+        "sharpe": -0.11561327486377533,
+        "max_drawdown": -99.99668511615907,
+        "calmar": -0.1829704310533834,
+        "years": 42.25872689938399
+      },
+      {
+        "label": "Overnight only  (net, 6bp/side)",
+        "total_return": 998.1202339607013,
+        "cagr": 5.835281056860797,
+        "ann_vol": 28.292434022384562,
+        "sharpe": 0.3418841356815159,
+        "max_drawdown": -92.7983331475931,
+        "calmar": 0.06288131326216764,
+        "years": 42.25051334702259
+      },
+      {
+        "label": "Intraday only   (net, 6bp/side)",
+        "total_return": -99.99999994607508,
+        "cagr": -39.64970855155546,
+        "ann_vol": 53.057072139195995,
+        "sharpe": -0.6854478677475075,
+        "max_drawdown": -99.99999997744612,
+        "calmar": -0.3964970856049801,
+        "years": 42.25872689938399
+      },
+      {
+        "label": "Buy and hold    (net)",
+        "total_return": 75161.34088037504,
+        "cagr": 16.968920814685372,
+        "ann_vol": 60.832731427374455,
+        "sharpe": 0.5616202415263831,
+        "max_drawdown": -98.24983837151163,
+        "calmar": 0.1727119463598594,
+        "years": 42.25872689938399
+      }
+    ]
+  },
+  "universe_rows": [
+    {
+      "label": "Overnight only  (net, 6bp/side)",
+      "total_return": -99.99920982790562,
+      "cagr": -16.612594937425396,
+      "ann_vol": 9.109195788697185,
+      "sharpe": -1.947904013471961,
+      "max_drawdown": -99.99925927394341,
+      "calmar": -0.16612717992156273,
+      "years": 64.66803559206024
+    },
+    {
+      "label": "Intraday only   (net, 6bp/side)",
+      "total_return": -99.99999075692577,
+      "cagr": -22.155798490488298,
+      "ann_vol": 15.265384302034493,
+      "sharpe": -1.5634180169314384,
+      "max_drawdown": -99.99999078834632,
+      "calmar": -0.22155800531403913,
+      "years": 64.66803559206024
+    },
+    {
+      "label": "Overnight only  (ZERO costs)",
+      "total_return": 240440.0518460971,
+      "cagr": 12.79381768063561,
+      "ann_vol": 9.109195788697185,
+      "sharpe": 1.3676737772228211,
+      "max_drawdown": -30.09201990279793,
+      "calmar": 0.4251564940459864,
+      "years": 64.66803559206024
+    },
+    {
+      "label": "Intraday only   (ZERO costs)",
+      "total_return": 2730.4307483567463,
+      "cagr": 5.305451029051178,
+      "ann_vol": 15.265384302034496,
+      "sharpe": 0.4150613092699744,
+      "max_drawdown": -56.90228714031195,
+      "calmar": 0.09323792233462924,
+      "years": 64.66803559206024
+    },
+    {
+      "label": "SPY buy and hold (net)",
+      "total_return": 3094.049185500436,
+      "cagr": 10.860588440476594,
+      "ann_vol": 18.531747948300254,
+      "sharpe": 0.6491750765705728,
+      "max_drawdown": -55.18943118036731,
+      "calmar": 0.19678746832853863,
+      "years": 33.596167008898014
+    }
+  ],
+  "sweep": [
+    {
+      "bps": 0,
+      "overnight_cagr": 12.79381768063561,
+      "intraday_cagr": 5.305451029051178,
+      "overnight_sharpe": 1.3676737772228211
+    },
+    {
+      "bps": 0.25,
+      "overnight_cagr": 11.383895775563001,
+      "intraday_cagr": 3.988737602483816,
+      "overnight_sharpe": 1.229524702610537
+    },
+    {
+      "bps": 0.5,
+      "overnight_cagr": 9.991528730588396,
+      "intraday_cagr": 2.688423431457432,
+      "overnight_sharpe": 1.0913756279982547
+    },
+    {
+      "bps": 1,
+      "overnight_cagr": 7.258591056369501,
+      "intraday_cagr": 0.13618159825523612,
+      "overnight_sharpe": 0.8150774787736885
+    },
+    {
+      "bps": 1.5,
+      "overnight_cagr": 4.5932950245076265,
+      "intraday_cagr": -2.3528720328444774,
+      "overnight_sharpe": 0.5387793295491219
+    },
+    {
+      "bps": 2,
+      "overnight_cagr": 1.9939729824196561,
+      "intraday_cagr": -4.78029578350021,
+      "overnight_sharpe": 0.2624811803245583
+    },
+    {
+      "bps": 2.5,
+      "overnight_cagr": -0.5410017684069013,
+      "intraday_cagr": -7.147609694818957,
+      "overnight_sharpe": -0.013816968900006764
+    },
+    {
+      "bps": 3,
+      "overnight_cagr": -3.0132159742151554,
+      "intraday_cagr": -9.456296464038328,
+      "overnight_sharpe": -0.29011511812457436
+    },
+    {
+      "bps": 5,
+      "overnight_cagr": -12.304858014406738,
+      "intraday_cagr": -18.133169585614915,
+      "overnight_sharpe": -1.3953077150228306
+    },
+    {
+      "bps": 6,
+      "overnight_cagr": -16.612594937425396,
+      "intraday_cagr": -22.155798490488298,
+      "overnight_sharpe": -1.947904013471961
+    },
+    {
+      "bps": 10,
+      "overnight_cagr": -31.835799087159266,
+      "intraday_cagr": -36.37092638646367,
+      "overnight_sharpe": -4.158289207268485
+    },
+    {
+      "bps": 20,
+      "overnight_cagr": -58.848202169337306,
+      "intraday_cagr": -61.5920197683689,
+      "overnight_sharpe": -9.68425219175979
+    }
+  ],
+  "breakeven_bps": 2.5,
+  "sessions": 16277,
+  "span": [
+    "1962-01-03",
+    "2026-09-04"
+  ],
+  "annual_cost_drag_pct": 30.239999999999995
+}

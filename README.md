@@ -158,6 +158,56 @@ I distilled the free [FNSPID](https://huggingface.co/datasets/Zihan1004/FNSPID) 
 
 ---
 
+## 🌙 Overnight vs intraday: a real anomaly you still cannot trade
+
+A widely shared video claims you capture nearly all of the equity risk premium by
+buying at the close and selling at the next open, showing Micron at **+138,330%
+overnight vs -99.92% intraday**. It cites a real paper (Lou, Polk & Skouras, *A
+tug of war: Overnight versus intraday expected returns*, JFE 134(1), 2019). The
+paper is genuine. The video adds one cherry-picked survivor and **zero
+transaction costs on a strategy that round-trips about 252 times a year.**
+
+[`overnight_vs_intraday.py`](overnight_vs_intraday.py) removes both: it splits
+every session into its two legs (asserting they recombine to the full day),
+charges the same cost model everything else here uses, and runs the 65-name pool
+instead of one name.
+
+| Equal-weight, 65 names, 1962-2026 | CAGR | Sharpe | Max DD |
+|---|---:|---:|---:|
+| Overnight leg, **zero costs** | 12.8% | **1.37** | **-30%** |
+| SPY buy & hold (net) | 10.9% | 0.65 | -55% |
+| Overnight leg, **net at 6bp/side** | **-16.6%** | -1.95 | -100% |
+| Intraday leg, net at 6bp/side | -22.2% | -1.56 | -100% |
+
+**The effect is real and it is unharvestable.** Gross, the overnight leg genuinely
+beats SPY on Sharpe and drawdown, which is the paper's finding. Net, a daily round
+trip pays the spread ~504 times a year, or **30% of capital annually** at 6bp per
+side, against buy-and-hold's two payments ever. The overnight leg only beats
+buy-and-hold below roughly **0.4bp per side** and turns outright negative above
+**2.5bp**. That is a market-maker cost structure, not a retail one.
+
+Even on the video's own cherry-picked name the framing collapses: MU's
++384,729,533% gross becomes **+998% net, against +75,161% for simply holding it.**
+
+Note the direction of the remaining bias: the 65-name pool is survivorship-
+controlled by construction but not fully clean, so the *gross* line is likely
+flattered. That works in favor of this conclusion, not against it. Run
+`--universe pit` to confirm on point-in-time membership.
+
+---
+
+## 🖥️ The dashboard
+
+`python build_dashboard.py` renders every idea in this stack into one page under
+`Documents/CoworkOS/Trading Dashboard/` (HTML + Markdown). One design rule
+governs it: **every panel carries an evidence tier on its face** — validated,
+tested-and-rejected, untested hypothesis, or not mechanizable — and the tiers do
+not look alike. Rejected ideas get their own section kept high on the page, so
+nothing already disproven here quietly gets rebuilt. Read-only: it reads
+`DRY_RUN` out of `main.py` rather than asserting it, and places no orders.
+
+---
+
 ## 🎯 The problem this solves
 
 Most retail "trading bot" projects pick one strategy (trend-following or mean-reversion) and apply it to every ticker. That works for the subset of stocks that match the strategy, and silently loses money on the rest. A high-volatility momentum stock like NVDA needs different treatment than a choppy laggard like F, which needs different treatment than a low-vol blue chip like JPM.
@@ -253,6 +303,8 @@ TradingBot/
 ├── system_execution_client.py  # Schwab API client
 ├── algo_stocks.py / algo_crypto.py / algo_forex.py
 ├── journal.py                  # Encrypted Google Drive trade log
+├── overnight_vs_intraday.py    # Overnight-effect cost test (real gross, dead net)
+├── build_dashboard.py          # Evidence-tiered dashboard generator
 └── requirements.txt
 ```
 

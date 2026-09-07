@@ -47,6 +47,7 @@ OUTPUT ── plot_results.py · plot_equity.py · README charts
 - **Universe / survivorship:** `run_sp500.py` (current full S&P 500 — a *cautionary* 40.6% mirage), `run_sp500_pit.py` (point-in-time membership reconstructed from Wikipedia's change log — the honest version, ~32% with the coverage gap reported).
 - **Gap-down risk:** `demo_exits.py` (trend exits cap real crashers at −15–25% vs −84% held), `stress_gaps.py` (synthetic overnight-gap Monte Carlo — diversification cuts worst-case drawdown −77%→−31%).
 - **Risk overlay:** `run_overlay.py` + `run_overlay_smart.py` (stops/caps tested — *baseline already wins*; even a disaster-only stop is a no-op).
+- **Overnight vs intraday:** `overnight_vs_intraday.py` decomposes every session into its close-to-open and open-to-close legs (asserting the two recombine to the full day), charges the repo cost model on every side, runs a universe rather than one name, and sweeps cost to find the breakeven. Tests the "buy the close, sell the open" claim from Lou, Polk & Skouras, *JFE* 134(1), 2019. *Result: real gross, unharvestable net.*
 
 ### Bot 2 — news / sentiment / industry (a complementary idea-feeder, not a standalone strategy)
 - **`news_sentiment.py`** — VADER scoring over headlines (pluggable provider). **`industry_map.py`** — thematic baskets + correlation peers ("who benefits from the SpaceX IPO"). **`live_picks.py`** — wires sentiment into Strategy C's *live* ranking as a tilt.
@@ -67,6 +68,7 @@ Two Claude skills built on this logic: **trade-identifier** (technical verdict o
 | Can you fix survivorship with today's S&P 500? | **No — that's the trap** (inflates to a fake 40.6% CAGR). Only *point-in-time* membership (+ ideally delisted prices) is honest. |
 | Do stops / position caps help? | **No** — naive trailing stops whipsaw and *worsen* drawdown; disaster-only stops are no-ops. The regime gate + diversification already handle it. |
 | Is news sentiment alpha? | **No** — looked strong on the curated pool but collapsed on the broad universe; it's momentum-independent (not a momentum proxy) but weak and universe-dependent. A minor risk-tilt at most. |
+| Does buying the close and selling the open survive costs? | **No, not at retail.** Gross, the published overnight effect is real: 12.8% CAGR at Sharpe 1.37 with a -30% drawdown, against SPY's 10.9% at 0.65. Net of this repo's own 6bp/side model it is -16.6% CAGR. A daily round trip pays the spread ~504 times a year (30% of capital annually); buy-and-hold pays it twice. It needs sub-0.4bp/side execution just to beat buy-and-hold. |
 
 The recurring lesson: **be skeptical of any result that looks too good — the harder test usually deflates it.**
 
@@ -90,7 +92,20 @@ python demo_exits.py               # gap-down exit-timing proof
 python stress_gaps.py              # synthetic gap stress test
 python run_overlay_smart.py        # risk-overlay A/B
 python run_sentiment_validate.py   # sentiment orthogonalization + sub-period
+python overnight_vs_intraday.py --json overnight_results.json   # overnight-effect cost test
+python build_dashboard.py          # evidence-tiered dashboard -> Documents/CoworkOS
 ```
+
+## The dashboard (`build_dashboard.py`)
+
+Renders every idea in this stack into one page under
+`Documents/CoworkOS/Trading Dashboard/`, as HTML and as Markdown. Its one design
+rule: **every panel carries an evidence tier on its face**, and the tiers do not
+look alike (validated is solid and prominent, untested is dashed and lighter).
+Ideas already disproven here get their own section, kept high on the page rather
+than in a footer, so neither a human nor an agent rebuilds them. It is read-only,
+reads `DRY_RUN` out of `main.py` rather than asserting it, and pulls live gold /
+oil / 10-year-yield / SPY-regime readings at build time.
 
 ## Honest limitations
 - yfinance price-survivorship (delisted names missing); no walk-forward harness; the synthetic-options model in the original engine is approximate.
