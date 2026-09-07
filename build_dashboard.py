@@ -317,6 +317,69 @@ def build_panels(live, macro, on_res, port=None):
     ))
 
     panels.append(dict(
+        tier=6, title="Overnight effect, with selection",
+        subtitle="Survived four attempts to kill it. Blocked on execution, not on evidence.",
+        body=[
+            "This began in the rejected list below and was moved here, which is "
+            "the tiering doing its job in the direction nobody expects. The first "
+            "test held EVERY name overnight and failed. That was a result about "
+            "the absence of selection, not about the effect.",
+            "Rank the point-in-time S&P 500 by trailing 252-day overnight return, "
+            "rebalance monthly, hold the top names overnight only, and sell into "
+            "the opening auction.",
+        ],
+        metrics=[
+            ("Top 33, 3% positions", "26.9%", "1.49", "-31%", ""),
+            ("Top 20, 5% positions", "32.2%", "1.59", "-31%", ""),
+            ("Top quintile plus SPY 200-day gate", "17.1%", "1.81", "-13%", ""),
+            ("Same basket held ALL DAY", "13.6%", "0.65", "-60%", ""),
+            ("SPY buy and hold", "11.0%", "0.63", "-55%", ""),
+        ],
+        metric_note="Point-in-time membership, 2007 to 2026, zero cost, after "
+                    "both data filters. Post-2019 at 3% positions it still "
+                    "returns 22.9% at Sharpe 1.24.",
+        readings=[
+            "It is not momentum. Median rank correlation with 12-month momentum "
+            "is 0.41 with 42% name overlap, and the momentum-orthogonalized "
+            "residual still returns 18.2% at Sharpe 1.26, against 12.6% for "
+            "ranking on momentum itself. The residual carries the effect, which "
+            "is the same test that dismantled the sentiment tilt.",
+            "It is not a data artifact. It holds on the clean 65-name megacap "
+            "pool at 35.6%, and the selected names show an Open equal to the "
+            "prior Close on only 0.0% to 3.1% of days.",
+            "The timing is the edge, not just the selection. The identical "
+            "basket held all day returns 13.6% at Sharpe 0.65 against 21.0% at "
+            "1.42 held overnight. The intraday leg of these names is actively "
+            "harmful.",
+            "It survived publication, with decay. Sharpe 1.59 before 2019, 1.20 "
+            "after.",
+        ],
+        blocker=(
+            "Execution, and it is unresolved. Every number here assumes fills at "
+            "the official opening and closing auction prints, because that is "
+            "exactly what the backtest measures. Commissions are zero at United "
+            "States retail brokers, so auction slippage is the only binding cost. "
+            "Full period the strategy beats every benchmark up to about 1 basis "
+            "point per side; POST-2019 it beats them only below roughly 0.25 "
+            "basis points per side on return. That is a very thin margin, and "
+            "nobody has measured what fills actually look like against the print. "
+            "Until that is measured this is a finding, not a strategy."),
+        caveat=(
+            "What is still missing, stated plainly. There is no walk-forward "
+            "harness, so the 252-day lookback and the position count were chosen "
+            "with the whole sample visible, even though all three lookbacks "
+            "tested worked and improved monotonically. Tail risk is one "
+            "historical path: this repo's own gap stress test cut worst-case "
+            "drawdown from -77% at three names to -31% at twenty, so "
+            "concentration at ten names is more dangerous than its measured -29% "
+            "suggests. And the data is daily bars from a free source, not the "
+            "trade-and-quote data the paper used with a bid-ask midpoint "
+            "robustness check."),
+        source="overnight_study.py, overnight_study2.py. Paper: Lou, Polk and "
+               "Skouras, Journal of Financial Economics 134(1), 2019, 192-213",
+    ))
+
+    panels.append(dict(
         tier=1, title="Survivorship discipline",
         subtitle="The control that makes every other number here believable.",
         body=[
@@ -326,12 +389,20 @@ def build_panels(live, macro, on_res, port=None):
         ],
         metrics=[
             ("Today's S&P 500 run backwards", "40.6%", "", "", "a trap"),
-            ("Point-in-time membership", "32.2%", "", "", "honest"),
+            ("Point-in-time membership", "32.3%", "1.22", "-35%", "still dirty"),
+            ("Point-in-time PLUS data filter", "24.7%", "1.01", "-34%", "honest"),
+            ("SPY buy and hold", "10.9%", "0.65", "-55%", "benchmark"),
         ],
-        metric_note="Removing selection hindsight erased about 8 points of fake "
-                    "compound annual growth rate (CAGR). 682 of 867 ever-members "
-                    "could be priced (79%); the missing 21% are delisted names "
-                    "that free data will not serve.",
+        metric_note="Two separate inflations, each worth about 8 points. Removing "
+                    "selection hindsight took 40.6% to 32.3%. Removing broken "
+                    "delisted-ticker data took another 7.6 points off, to 24.7%, "
+                    "and Sharpe from 1.22 to 1.01. The control holds: the "
+                    "unfiltered path reproduces 32.3% against the published "
+                    "32.2%, so the harness is sound and the gap is real. The "
+                    "repo's older claim of Sharpe 1.1 to 1.25 should now read "
+                    "roughly 1.0 to 1.1. The filter is conservative and removes "
+                    "some genuine events, so the true figure likely sits between "
+                    "24.7% and 32.3%, nearer the lower end.",
         source="run_sp500_pit.py against run_sp500.py",
     ))
 
@@ -391,7 +462,7 @@ def build_panels(live, macro, on_res, port=None):
         be = on_res.get('breakeven_bps')
         drag = on_res.get('annual_cost_drag_pct')
         rejected.insert(0, dict(
-            title="Buy at the close and sell at the open, as a retail strategy",
+            title="Buy at the close and sell at the open on EVERY name",
             fresh=True,
             killer=(
                 f"Tested here for the first time, and it does not survive costs. "
@@ -410,17 +481,15 @@ def build_panels(live, macro, on_res, port=None):
                 f"negative above {be} basis points. That is a market-maker cost "
                 f"structure, not a retail one."),
             caveat=(
-                "CONFIRMED on the honest universe, and the confirmation was "
-                "harsher than the megacap run. Re-run on point-in-time S&P 500 "
-                "membership over 2007 to 2026, the window where the change log is "
-                "actually dense, across about 417 names a day: the overnight leg "
-                "grosses 7.9% CAGR at Sharpe 0.69, against SPY's 11.0% at 0.63 and "
-                "12.0% for equal-weight holding the same names. The impressive "
-                "Sharpe of 1.19 to 1.37 was a MEGA-CAP ARTIFACT. On a broad honest "
-                "universe the risk-adjusted edge over SPY is roughly nothing, and "
-                "net of costs it is -20.2% CAGR with breakeven down near 1 to 2 "
-                "basis points per side. This is the same shape as the sentiment "
-                "tilt: strong on a curated pool, gone on the broad one."),
+                "SCOPE, and read it carefully. This rejection covers the "
+                "UNDIFFERENTIATED version only: hold every name, every night. On "
+                "point-in-time membership that grosses 7.9% CAGR at Sharpe 0.69 "
+                "against SPY's 11.0% at 0.63, so it has no edge even at zero "
+                "cost. Adding a SELECTION rule changes the answer completely and "
+                "that version now sits in the execution-blocked tier above at "
+                "26.9% and Sharpe 1.49. The failure here was the absence of "
+                "selection, not the absence of an effect. Do not cite this card "
+                "as evidence against the selected strategy."),
             source="overnight_vs_intraday.py. Reproduce: python "
                    "overnight_vs_intraday.py --json overnight_results.json",
         ))
@@ -626,6 +695,9 @@ TIERS = {
     3: ("UNTESTED HYPOTHESIS", "untested", "Plausible. No evidence yet. Backtest path given."),
     4: ("NOT MECHANIZABLE", "nomech", "Cannot be written down as falsifiable rules."),
     5: ("WATCHLIST", "watch", "Research queue. Not dashboard logic."),
+    6: ("TESTED, EXECUTION-BLOCKED", "blocked",
+        "Survived every test run against it, but has a named blocker that makes "
+        "it undeployable. Not validated, not rejected."),
 }
 
 CSS = """
@@ -704,6 +776,13 @@ section>p.secnote{margin:0 0 14px;color:var(--ink2);font-size:.87rem;max-width:7
 .t-nomech{border:2px dashed var(--axis);border-left-width:6px;opacity:.88}
 .t-nomech h3{font-size:.98rem;font-weight:650}
 .t-watch{border:2px dashed var(--axis);border-left-width:6px;opacity:.92}
+.t-blocked{border:1px solid var(--ring);border-left:6px solid var(--warning)}
+.t-blocked h3{font-size:1.14rem;font-weight:700}
+.b-blocked{background:var(--warning);color:#3a2a00}
+.blocker{background:rgba(250,178,25,.12);border:1px solid var(--warning);border-radius:7px;
+  padding:11px 13px;margin:10px 0 0;font-size:.9rem;color:var(--ink)}
+.blocker h4{margin:0 0 6px;font-size:.72rem;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--muted);font-weight:700}
 .t-watch h3{font-size:.98rem;font-weight:650}
 
 .evbar{display:flex;gap:3px;margin:0 0 2px}
@@ -996,7 +1075,8 @@ def render_card(p, on_res, spy_cagr):
            2: '<span class="evbar rej"><i class="on"></i><i class="on"></i><i class="on"></i></span>',
            3: '<span class="evbar uns"><i></i><i></i><i></i></span>',
            4: '<span class="evbar uns"><i></i><i></i><i></i></span>',
-           5: '<span class="evbar uns"><i></i><i></i><i></i></span>'}[p['tier']]
+           5: '<span class="evbar uns"><i></i><i></i><i></i></span>',
+           6: '<span class="evbar"><i class="on"></i><i class="on"></i><i></i></span>'}[p['tier']]
     o.append(bar)
     o.append(f'<div><span class="badge b-{cls}">{label}</span>'
              + ('<span class="fresh">NEW THIS BUILD</span>' if p.get('fresh') else '')
@@ -1072,6 +1152,8 @@ def render_card(p, on_res, spy_cagr):
         o.append('<ul class="acts">' + "".join(f'<li>{esc(a)}</li>' for a in p['actions']) + '</ul>')
     if p.get('note'):
         o.append(f'<p class="note">{esc(p["note"])}</p>')
+    if p.get('blocker'):
+        o.append(f'<div class="blocker"><h4>The blocker</h4>{esc(p["blocker"])}</div>')
     if p.get('caveat'):
         o.append(f'<div class="caveat"><h4>Where this study is weak</h4>'
                  f'{esc(p["caveat"])}</div>')
@@ -1267,8 +1349,12 @@ def render_html(panels, live, macro, on_res, dry_run, dry_src, port=None):
                                 "does not get proposed again."),
         5: ("Watchlist", "Research queue. Not dashboard logic, and no verdict is "
                          "computed here."),
+        6: ("Tested, execution-blocked", "Survived every test run against it, "
+            "including the ones designed to kill it, but cannot be deployed until "
+            "a named blocker is resolved. Deliberately not filed as validated: "
+            "passing a backtest is not the same as being tradeable."),
     }
-    for t in (1, 2, 3, 4, 5):
+    for t in (1, 6, 2, 3, 4, 5):
         group = [p for p in panels if p['tier'] == t]
         if not group:
             continue
@@ -1315,8 +1401,9 @@ def render_md(panels, live, macro, on_res, dry_run, dry_src, port=None):
          f"{'above' if r['above'] else 'below'} its 200-day simple moving average.",
          ""]
     heads = {1: "Validated", 2: "Tested and rejected", 3: "Untested hypotheses",
-             4: "Not mechanizable", 5: "Watchlist"}
-    for t in (1, 2, 3, 4, 5):
+             4: "Not mechanizable", 5: "Watchlist",
+             6: "Tested, execution-blocked"}
+    for t in (1, 6, 2, 3, 4, 5):
         group = [p for p in panels if p['tier'] == t]
         if not group:
             continue
@@ -1416,6 +1503,8 @@ def render_md(panels, live, macro, on_res, dry_run, dry_src, port=None):
             for key in ('metric_note', 'robust', 'prior', 'note'):
                 if p.get(key):
                     L += [p[key], ""]
+            if p.get('blocker'):
+                L += [f"**The blocker:** {p['blocker']}", ""]
             if p.get('caveat'):
                 L += [f"**Where this study is weak:** {p['caveat']}", ""]
             if p.get('watch'):

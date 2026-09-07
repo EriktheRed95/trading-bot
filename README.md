@@ -189,22 +189,71 @@ buy-and-hold below roughly **0.4bp per side** and turns outright negative above
 Even on the video's own cherry-picked name the framing collapses: MU's
 +384,729,533% gross becomes **+998% net, against +75,161% for simply holding it.**
 
-### Confirmed on point-in-time membership — and it got worse
+### The naive version fails. The *selected* version does not.
 
 Re-run on **point-in-time S&P 500 membership, 2007-2026** (the window where the
-change log is actually dense), ~417 names/day, with the data filter below:
+change log is actually dense), ~417 names/day, with the data filters below:
 
 | Point-in-time universe, 2007-2026 | CAGR | Sharpe | Max DD |
 |---|---:|---:|---:|
 | EW hold, same names (gross) | 12.0% | 0.64 | -54% |
-| SPY buy & hold (net) | 11.0% | 0.63 | -55% |
-| Overnight leg, **zero costs** | 7.9% | **0.69** | -32% |
-| Overnight leg, **net at 6bp/side** | **-20.2%** | -1.81 | -99% |
+| SPY buy & hold | 11.0% | 0.63 | -55% |
+| **Every name** overnight, zero cost | 7.9% | 0.69 | -32% |
+| **Every name** overnight, net 6bp/side | **-20.2%** | -1.81 | -99% |
 
-**The Sharpe of 1.19-1.37 was a mega-cap artifact.** On an honest broad universe
-the overnight leg grosses 0.69 against SPY's 0.63 — no meaningful risk-adjusted
-edge *before* costs — and breakeven falls to roughly 1-2bp/side. This is the
-same shape as the sentiment tilt: strong on a curated pool, gone on the broad one.
+So holding *everything* overnight has no edge even at zero cost. **But that is a
+result about the absence of selection, not about the effect.**
+[`overnight_study.py`](overnight_study.py) and
+[`overnight_study2.py`](overnight_study2.py) add ranking — trailing 252-day
+overnight return, monthly rebalance, hold the top names overnight only:
+
+| Point-in-time, selected, zero cost | CAGR | Sharpe | Max DD |
+|---|---:|---:|---:|
+| Top 20 (5% positions) | 32.2% | 1.59 | -31% |
+| **Top 33 (3% positions)** | **26.9%** | **1.49** | **-31%** |
+| Top 83 (quintile) | 19.2% | 1.31 | -31% |
+| Top quintile **+ SPY 200-day gate** | 17.1% | **1.81** | **-13%** |
+| Same top quintile held **all day** | 13.6% | 0.65 | -60% |
+
+**Four attempts to break it, all survived:**
+
+1. **Is it just momentum?** No. Median Spearman rank correlation with 12-month
+   momentum is **0.41**, quintile name overlap 42%, and the
+   momentum-orthogonalized residual still returns **18.2% at Sharpe 1.26** —
+   against 12.6% for ranking on momentum directly. The residual carries the effect.
+2. **Is it a data artifact?** No. It holds on the clean 65-name megacap pool
+   (**35.6%** overnight vs 20.6% for the same names held all day), and the
+   selected names (MU, AMD, F, NVDA, BAC) show `Open == prior Close` on only
+   0.0-3.1% of days. Their profile is +8 to +18bp overnight against -2 to -11bp
+   intraday, which is the clientele split the paper describes.
+3. **Is it selection or timing?** **Timing.** The same basket held all day gives
+   13.6% at Sharpe 0.65; held overnight only it gives 21.0% at 1.42.
+4. **Does it survive publication?** Yes, decayed. Pre-2019 23.5% (Sharpe 1.59),
+   post-2019 17.8% (Sharpe 1.20). Post-2019 at 3% positions: **22.9%, Sharpe 1.24.**
+
+### ⚠️ The unresolved blocker: execution
+
+The whole result rides on capturing the **official opening and closing auction
+prints**, because that is exactly what the backtest measures. Commissions are
+zero at US retail brokers, so auction slippage is the binding cost:
+
+| | full period | post-2019 |
+|---|---|---|
+| Beats every benchmark up to | ~1bp/side | **~0.25bp/side** |
+| Beats EW-hold-all up to | ~1.5bp/side | ~0.25bp/side |
+
+Post-publication the **return** edge is gone by half a basis point per side.
+What survives further is the *risk* profile: Sharpe 1.2-1.7 and -13% drawdown
+gated, against SPY's 0.93 and -34%. **Until real fills are measured against the
+auction print, this is not deployable.** `DRY_RUN` stays `True`.
+
+### ⚠️ A second data trap: degenerate Open prices
+
+Distinct from the delisted-price problem. **16 tickers print `Open` identical to
+a `Close` on more than 10% of bars** (SW does it on 80%). They pass a price floor
+and a move cap because the prices look ordinary. They inflated the top-20 result
+from 32.2% to 37.8% CAGR. Any study that splits the day into legs must screen for
+this.
 
 ### ⚠️ Free price data on delisted tickers is broken (affects `run_sp500_pit.py`)
 

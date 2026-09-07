@@ -1,0 +1,42 @@
+{
+  "test_a": {
+    "rank on trailing OVERNIGHT return": {
+      "total_return": 3381.666139907048,
+      "cagr": 21.038665586397464,
+      "ann_vol": 14.186761152591506,
+      "sharpe": 1.4176394047761658,
+      "max_drawdown": -30.798305925858926,
+      "calmar": 0.6831111307564791,
+      "years": 18.5927446954141
+    },
+    "rank on 12-month MOMENTUM (close to close)": {
+      "total_return": 804.0560714687022,
+      "cagr": 12.571489818286729,
+      "ann_vol": 11.869328632642578,
+      "sharpe": 1.057718956018916,
+      "max_drawdown": -31.32130479293751,
+      "calmar": 0.4013718426290278,
+      "years": 18.5927446954141
+    },
+    "rank on trailing INTRADAY return": {
+      "total_return": 192.70456628325888,
+      "cagr": 5.946506374301164,
+      "ann_vol": 11.346883519341171,
+      "sharpe": 0.5663072113713188,
+      "max_drawdown": -37.3670975538888,
+      "calmar": 0.15913749698449112,
+      "years": 18.5927446954141
+    },
+    "rank on OVERNIGHT RESIDUAL vs momentum": {
+      "total_return": 2140.558470081709,
+      "cagr": 18.202899583540976,
+      "ann_vol": 14.050183357281032,
+      "sharpe": 1.261159997102743,
+      "max_drawdown": -30.67757016986746,
+      "calmar": 0.5933618432864176,
+      "years": 18.5927446954141
+    }
+  },
+  "rho_median": 0.41378462646702086,
+  "overlap_median": 0.4155844155844156
+}
