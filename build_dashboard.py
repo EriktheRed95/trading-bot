@@ -183,7 +183,7 @@ def macro_reading(live):
 
 # ------------------------------------------------------------------- the panels
 
-def build_panels(live, macro, on_res, port=None, tips=None):
+def build_panels(live, macro, on_res, port=None, tips=None, theses=None):
     """Every panel, each stamped with its tier. Order is deliberate."""
     ov = {r['label']: r for r in on_res.get('universe_rows', [])} if on_res else {}
     ov_single = ({r['label']: r for r in on_res['single_name']['rows']}
@@ -636,6 +636,36 @@ def build_panels(live, macro, on_res, port=None, tips=None):
         source="concept_drift.py, README.md",
     ))
 
+    if theses:
+        for th in theses.get('theses', []):
+            panels.append(dict(
+                tier=3, title=f"Thesis: {th['title']}",
+                subtitle="A structural argument, which beats a tip and is still "
+                         "not a backtest.",
+                thesis=th,
+                body=[th['structural_claim']],
+                source=f"thesis_intake.py, content_theses.json. Source: "
+                       f"{th.get('url', '')}",
+            ))
+        panels.append(dict(
+            tier=3, title="Tradability gate",
+            subtitle="Run before any screen, because a signal on a series that "
+                     "is not trading is not a signal.",
+            gate=True,
+            body=[
+                "A thesis is worth nothing if its expressions cannot be reached. "
+                "Each candidate is measured on median dollar volume, quoted "
+                "spread, the share of sessions printing zero change, and where a "
+                "liquid home listing exists, the correlation between the two.",
+                "The gate validates its own instrument first. Quoted spreads from "
+                "a free feed are meaningless while the market is closed, so it "
+                "checks a canary known to trade at a hair-thin spread. If the "
+                "canary fails, the spread test switches off and the verdict rests "
+                "only on measures that do not need a live quote.",
+            ],
+            source="thesis_intake.py",
+        ))
+
     # ---------------------------------------------------------- TIER 4
     panels.append(dict(
         tier=4, title="Session sweep and fair value gap reversal",
@@ -858,6 +888,7 @@ tr.hero td{font-weight:700;color:var(--ink)}
 .cell.here.severe{border:2px solid var(--critical);background:rgba(208,59,59,.08)}
 .q2{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:10px 0}
 .reading{margin:12px 0 0;font-size:.9rem;color:var(--ink2)}
+.sub4{margin:12px 0 4px;font-size:.72rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700}
 .chip{display:inline-block;font-size:.62rem;font-weight:700;letter-spacing:.06em;
   text-transform:uppercase;padding:2px 6px;border-radius:3px;margin-right:4px;
   border:1px solid var(--axis);color:var(--muted)}
@@ -1159,6 +1190,10 @@ def render_card(p, on_res, spy_cagr):
                  + "".join(f'<li>{esc(r)}</li>' for r in p['readings']) + '</ul>')
     if p.get('portfolio'):
         o.append(render_portfolio(p['_port']))
+    if p.get('thesis'):
+        o.append(render_thesis(p['thesis']))
+    if p.get('gate'):
+        o.append(render_gate(p['_theses']))
     if p.get('tipverdicts'):
         o.append(render_tips(p['_tips']))
     if p.get('claimledger'):
@@ -1245,6 +1280,85 @@ def render_portfolio(port):
                  '<span><i style="background:var(--s1)"></i>SPY</span>'
                  '<span><i style="background:var(--s2)"></i>200-day simple moving '
                  'average</span></div>' + regime_chart(hist, sma) + '</div>')
+    return "".join(o)
+
+
+def render_thesis(th):
+    o = []
+    if th.get('what_must_be_true'):
+        o.append('<h4 class="sub4">What would have to be true</h4><ul class="rules">'
+                 + "".join(f'<li>{esc(w)}</li>' for w in th['what_must_be_true'])
+                 + '</ul>')
+    lb = th.get('load_bearing_claim') or {}
+    if lb:
+        bad = lb['verdict'].startswith(('RETRACTED', 'WRONG', 'UNSUPPORTED'))
+        o.append(f'<div class="{"killer" if bad else "priorbox"}">'
+                 f'<b>Load-bearing number:</b> {esc(lb["claim"])}<br>'
+                 f'<span class="chip {"crit" if bad else "warn"}">'
+                 f'{esc(lb["verdict"])}</span> '
+                 f'<span class="note">checked against '
+                 f'{esc(lb["checked_against"])}</span>'
+                 f'<p class="note">{esc(lb.get("note", ""))}</p></div>')
+    if th.get('named_companies'):
+        o.append('<table class="port"><thead><tr><th>Company</th><th>Role</th>'
+                 '<th>Claim</th><th>Reachable from a US brokerage?</th>'
+                 '</tr></thead><tbody>')
+        for c in th['named_companies']:
+            t = c.get('tradeable_us')
+            cls, lab = (('good', 'yes') if t is True
+                        else ('warn', 'nominal only') if t == 'nominal'
+                        else ('crit', 'NO'))
+            o.append(f'<tr><td><b>{esc(c["name"])}</b></td>'
+                     f'<td>{esc(c["role"])}</td>'
+                     f'<td class="tiny">{esc(c.get("claim", ""))} '
+                     f'<span class="chip">{esc(c.get("verdict", ""))}</span></td>'
+                     f'<td><span class="chip {cls}">{lab}</span> '
+                     f'<span class="tiny">{esc(c.get("us_access", ""))}</span>'
+                     f'</td></tr>')
+        o.append('</tbody></table>')
+    if th.get('expression_note'):
+        o.append(f'<p class="note">{esc(th["expression_note"])}</p>')
+    if th.get('marker_note'):
+        o.append(f'<p class="note">Promotional markers '
+                 f'({len(th.get("markers", []))}): {esc(th["marker_note"])}</p>')
+    return "".join(o)
+
+
+def render_gate(theses):
+    tr = (theses or {}).get('tradability', {})
+    if not tr:
+        return ""
+    o = ['<table class="port"><thead><tr><th>Ticker</th><th>Gate</th>'
+         '<th>$ vol/day</th><th>Stale prints</th><th>Home corr</th>'
+         '<th>Why</th></tr></thead><tbody>']
+    for t in sorted(tr):
+        r = tr[t]
+        if r.get('status') == 'NO DATA':
+            continue
+        ok = r['status'] == 'TRADEABLE'
+        why = "; ".join(r.get('fails', [])) or "clears every measure"
+        hc = ("%.2f" % r["home_corr"]) if r.get("home_corr") is not None else "-"
+        o.append(f'<tr><td><b>{esc(t)}</b></td>'
+                 f'<td><span class="chip {"good" if ok else "crit"}">'
+                 f'{esc(r["status"])}</span></td>'
+                 f'<td>${r["dollar_vol"] / 1e6:,.2f}M</td>'
+                 f'<td class="{"neg" if r["stale_frac"] > 0.10 else ""}">'
+                 f'{r["stale_frac"]:.0%}</td>'
+                 f'<td>{hc}</td>'
+                 f'<td class="tiny">{esc(why)}</td></tr>')
+    o.append('</tbody></table>')
+    for t, r in tr.items():
+        if r.get('mom_self') is not None:
+            o.append(f'<div class="killer"><b>{esc(t)} is why this gate exists.</b> '
+                     f'The trend screen reads {r["mom_self"]:+.0%} twelve-month '
+                     f'momentum on this line and {r["mom_home"]:+.0%} on '
+                     f'{esc(r["home"])} over the same window. Same company, same '
+                     f'economics, and the two listings correlate at '
+                     f'{r["home_corr"]:.2f}. That verdict would be stale prints '
+                     f'catching up, not a read on the business.</div>')
+    o.append('<p class="note">A fund is not failed on its own screen volume: '
+             'creation and redemption against the underlying basket make a fund '
+             'more reachable than a stock trading the same dollars.</p>')
     return "".join(o)
 
 
@@ -1422,7 +1536,7 @@ def render_macro(p):
     return "".join(o)
 
 
-def render_html(panels, live, macro, on_res, dry_run, dry_src, port=None, tips=None):
+def render_html(panels, live, macro, on_res, dry_run, dry_src, port=None, tips=None, theses=None):
     spy_cagr = 10.86
     if on_res:
         for r in on_res.get('universe_rows', []):
@@ -1437,6 +1551,8 @@ def render_html(panels, live, macro, on_res, dry_run, dry_src, port=None, tips=N
             p['_port'] = port
         if p.get('tipverdicts') or p.get('claimledger'):
             p['_tips'] = tips
+        if p.get('gate'):
+            p['_theses'] = theses
         if p['tier'] == 2 and p.get('fresh') and on_res:
             p['chart'] = (
                 '<div class="chartwrap"><div class="lg">'
@@ -1521,7 +1637,7 @@ def render_html(panels, live, macro, on_res, dry_run, dry_src, port=None, tips=N
     return "".join(o)
 
 
-def render_md(panels, live, macro, on_res, dry_run, dry_src, port=None, tips=None):
+def render_md(panels, live, macro, on_res, dry_run, dry_src, port=None, tips=None, theses=None):
     """Plain-text mirror. This is the file a future agent will actually read."""
     r = live['regime']
     L = ["# Trading dashboard", "",
@@ -1653,6 +1769,51 @@ def render_md(panels, live, macro, on_res, dry_run, dry_src, port=None, tips=Non
                 L += [f"**The blocker:** {p['blocker']}", ""]
             if p.get('caveat'):
                 L += [f"**Where this study is weak:** {p['caveat']}", ""]
+            if p.get('thesis'):
+                th = p['thesis']
+                if th.get('what_must_be_true'):
+                    L.append("What would have to be true:")
+                    L += [f"- {w}" for w in th['what_must_be_true']]
+                    L.append("")
+                lb = th.get('load_bearing_claim') or {}
+                if lb:
+                    L += [f"**Load-bearing number:** {lb['claim']}",
+                          f"**{lb['verdict']}** (checked against {lb['checked_against']})",
+                          "", lb.get('note', ''), ""]
+                if th.get('named_companies'):
+                    L += ["| Company | Role | Claim | Reachable from a US brokerage? |",
+                          "|---|---|---|---|"]
+                    for c in th['named_companies']:
+                        t = c.get('tradeable_us')
+                        lab = ("yes" if t is True
+                               else "nominal only" if t == 'nominal' else "NO")
+                        L.append(f"| {c['name']} | {c['role']} | "
+                                 f"{c.get('claim','')} ({c.get('verdict','')}) | "
+                                 f"{lab}: {c.get('us_access','')} |")
+                    L.append("")
+                for k in ('expression_note', 'marker_note'):
+                    if th.get(k):
+                        L += [th[k], ""]
+            if p.get('gate') and theses:
+                tr = theses.get('tradability', {})
+                L += ["| Ticker | Gate | $ vol/day | Stale prints | Home corr | Why |",
+                      "|---|---|---:|---:|---:|---|"]
+                for t in sorted(tr):
+                    r = tr[t]
+                    if r.get('status') == 'NO DATA':
+                        continue
+                    hc = ("%.2f" % r['home_corr']) if r.get('home_corr') is not None else "-"
+                    why = "; ".join(r.get('fails', [])) or "clears every measure"
+                    L.append(f"| {t} | {r['status']} | ${r['dollar_vol']/1e6:,.2f}M | "
+                             f"{r['stale_frac']:.0%} | {hc} | {why} |")
+                L.append("")
+                for t, r in tr.items():
+                    if r.get('mom_self') is not None:
+                        L += [f"**{t} is why this gate exists.** The trend screen reads "
+                              f"{r['mom_self']:+.0%} twelve-month momentum on this line "
+                              f"and {r['mom_home']:+.0%} on {r['home']} over the same "
+                              f"window. Same company, correlating at {r['home_corr']:.2f}.",
+                              ""]
             if p.get('tipverdicts') and tips:
                 counts = tips.get('counts', {})
                 qual = tips.get('quality', {}) or {}
@@ -1756,6 +1917,11 @@ def main():
             print(f"WARNING: model portfolio unavailable ({exc.__class__.__name__}: "
                   f"{exc}). The panel will be omitted.")
 
+    theses = None
+    th_path = REPO / "thesis_intake.json"
+    if th_path.exists():
+        theses = json.loads(th_path.read_text(encoding="utf-8"))
+
     tips = None
     tip_path = REPO / "tip_intake.json"
     if tip_path.exists():
@@ -1770,15 +1936,15 @@ def main():
         print("NOTE: overnight_results.json not found. The overnight panel will be "
               "omitted. Run: python overnight_vs_intraday.py --json overnight_results.json")
 
-    panels = build_panels(live, macro, on_res, port, tips)
+    panels = build_panels(live, macro, on_res, port, tips, theses)
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     html = out / "TRADING-DASHBOARD.html"
     md = out / "TRADING-DASHBOARD.md"
-    html.write_text(render_html(panels, live, macro, on_res, dry_run, dry_src, port, tips),
+    html.write_text(render_html(panels, live, macro, on_res, dry_run, dry_src, port, tips, theses),
                     encoding="utf-8")
-    md.write_text(render_md(panels, live, macro, on_res, dry_run, dry_src, port, tips),
+    md.write_text(render_md(panels, live, macro, on_res, dry_run, dry_src, port, tips, theses),
                   encoding="utf-8")
     print(f"Wrote {html}")
     print(f"Wrote {md}")

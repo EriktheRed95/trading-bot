@@ -146,12 +146,33 @@ def regime(close):
 
 
 def frequency(ledger):
+    """Count appearances across the WHOLE saved corpus, tips and theses alike.
+
+    The flag only means anything corpus-wide. MP Materials reaches three
+    appearances across three different creators only when the robotics thesis is
+    counted alongside the two tip videos, and three creators converging on one
+    small-cap is exactly what this is meant to surface.
+    """
     c = Counter()
     where = {}
+
+    def add(t, title):
+        c[t] += 1
+        where.setdefault(t, []).append(title)
+
     for src in ledger.get("sources", []):
         for t in src.get("tickers", []):
-            c[t] += 1
-            where.setdefault(t, []).append(src.get("title", src.get("id", "?")))
+            add(t, src.get("title", src.get("id", "?")))
+
+    th_path = REPO / "content_theses.json"
+    if th_path.exists():
+        for th in json.loads(th_path.read_text(encoding="utf-8")).get("theses", []):
+            # count the names the thesis actually NAMES, not every fund that
+            # might express it; a sector fund is not a creator pushing a ticker
+            named = {n.get("name") for n in th.get("named_companies", [])}
+            for t in th.get("expressions", []):
+                if t in ("MP",) or any(t.lower() in (n or "").lower() for n in named):
+                    add(t, th.get("title", th.get("id", "?")))
     return c, where
 
 

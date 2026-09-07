@@ -2,15 +2,15 @@
   "regime": {
     "risk_on": true,
     "spy": 770.1900024414062,
-    "sma200": 709.8685494995117,
+    "sma200": 709.8685498046875,
     "asof": "2026-09-04"
   },
   "rows": [
     {
       "ticker": "MU",
       "price": 1016.5900268554688,
-      "sma200": 606.3405876922608,
-      "pct_vs_sma": 67.65990063845504,
+      "sma200": 606.3405872344971,
+      "pct_vs_sma": 67.65990076503176,
       "mom12": 569.0862733514456,
       "mom6": 125.54034848846109,
       "vol": 98.46837861862535,
@@ -33,10 +33,10 @@
     {
       "ticker": "MRVL",
       "price": 223.5500030517578,
-      "sma200": 151.71072834014893,
-      "pct_vs_sma": 47.35279798442391,
+      "sma200": 151.71072845458986,
+      "pct_vs_sma": 47.35279787327033,
       "mom12": 246.101370711742,
-      "mom6": 136.24766291062232,
+      "mom6": 136.2476823793088,
       "vol": 96.47949552330374,
       "verdict": "ELIGIBLE",
       "fragile": true,
@@ -199,7 +199,7 @@
     "AAOI": 1,
     "ALOY": 1,
     "USAR": 2,
-    "MP": 2
+    "MP": 3
   },
   "where": {
     "MRVL": [
@@ -220,7 +220,8 @@
     ],
     "MP": [
       "Stock Investment Hype",
-      "Rare earths and United States supply-chain reshoring"
+      "Rare earths and United States supply-chain reshoring",
+      "Robotics supply chain, the bottleneck under the robot makers"
     ]
   },
   "sources": [

@@ -1,0 +1,66 @@
+{
+  "_README": "Ledger of THESES harvested from saved content, as distinct from tips. A tip hands you a ticker. A thesis hands you a structural claim that implies a basket, and the missing work is figuring out what actually expresses it. Every thesis here is UNTESTED HYPOTHESIS under the dashboard's evidence tiering: a structural argument beats a tip and is still not a backtest.",
+  "theses": [
+    {
+      "id": "ig-Dcmhy-vttUf",
+      "platform": "instagram",
+      "url": "https://www.instagram.com/p/Dcmhy-vttUf",
+      "title": "Robotics supply chain, the bottleneck under the robot makers",
+      "triaged": "2026-09-07",
+      "structural_claim": "Artificial intelligence supplies the brain for humanoid robots, but the body (actuators, reducers, magnets) is the constrained layer. So the capital opportunity sits underneath the robot makers rather than in them. This is the picks-and-shovels frame that worked for the semiconductor buildout.",
+      "what_must_be_true": [
+        "Actuation really is the dominant share of a humanoid's bill of materials, not a minor line",
+        "That share is supplied by a concentrated set of firms rather than commoditised",
+        "Humanoid volumes actually scale, since a bottleneck with no throughput is not a market",
+        "The bottleneck firms are reachable and tradeable by a United States retail account"
+      ],
+      "load_bearing_claim": {
+        "claim": "70% of a humanoid robot's cost is actuators",
+        "verdict": "OVERSTATED BUT DIRECTIONALLY SOUND",
+        "checked_against": "Morgan Stanley, Bank of America and Interact Analysis bill-of-materials estimates",
+        "note": "Published estimates put joint actuators at roughly 30% to 56% of the bill of materials: Morgan Stanley about 56%, Interact Analysis above 30% on high-configuration humanoids and above 50% on simpler ones. Bank of America splits linear actuators at 27% and rotary at 24%, which is about 51% before dexterous hands at 19%. Add the hands, which are themselves actuator-dense, and you reach roughly 70%. So the video's number is defensible ONLY under the broadest definition of actuation and is high against the common one. The thesis does not depend on 70%: it depends on actuation being the largest single cost centre, and that is well supported at any of these figures."
+      },
+      "named_companies": [
+        {"name": "Sanhua Intelligent Controls", "role": "actuator assembly for Tesla Optimus",
+         "claim": "$500M in current orders", "verdict": "UNVERIFIED",
+         "us_access": "NONE. No United States American Depositary Receipt. Hong Kong 2050.HK or Shenzhen 002050.SZ only, so it needs a brokerage with Hong Kong access.",
+         "tradeable_us": false},
+        {"name": "Harmonic Drive Systems", "role": "strain-wave reducers",
+         "claim": "60% share of Optimus reducers", "verdict": "UNVERIFIED",
+         "us_access": "HSYDF on the United States over-the-counter Pink market. Exists, but see the tradability gate: it is effectively untradeable at size.",
+         "tradeable_us": "nominal"},
+        {"name": "MP Materials", "role": "rare earth magnets",
+         "claim": "humanoids need 2x to 3x the magnetic material of an electric vehicle", "verdict": "UNVERIFIED",
+         "us_access": "NYSE, ordinary access.", "tradeable_us": true}
+      ],
+      "markers": ["track_record_no_evidence", "no_position_disclosure", "no_methodology"],
+      "marker_note": "Claims $1,000 in SanDisk a year ago is $34,180 today, roughly 34x, with no supporting data and nothing at all on the robotics names' actual performance. Decoration, not evidence.",
+      "expressions": ["MP", "HSYDF", "BOTZ", "ROBO", "ARKQ"],
+      "expression_note": "The named companies plus the sector exchange-traded funds the video never mentions, which are the obvious retail expression of a supply-chain thesis and therefore have to be checked rather than assumed."
+    },
+    {
+      "id": "ig-DawQhJSpTmm",
+      "platform": "instagram",
+      "url": "https://www.instagram.com/p/DawQhJSpTmm",
+      "title": "Water funds as an artificial-intelligence datacentre hedge",
+      "triaged": "2026-09-07",
+      "structural_claim": "Artificial intelligence datacentres consume large amounts of water, water scarcity worsens, therefore water-sector funds are a hedge on the buildout.",
+      "what_must_be_true": [
+        "Datacentre water use is material relative to total demand, not a rounding error beside agriculture and power",
+        "Water utilities and infrastructure capture that demand rather than absorbing it as regulated cost",
+        "The listed funds actually hold the businesses that would benefit"
+      ],
+      "load_bearing_claim": {
+        "claim": "About 519 millilitres of water per GPT-4 email, per the Washington Post and University of California Riverside",
+        "verdict": "RETRACTED BY ITS OWN AUTHOR",
+        "checked_against": "Shaolei Ren, University of California Riverside, the researcher who produced the original figure",
+        "note": "The 519ml figure traces to the 2023 'Making AI Less Thirsty' study on GPT-3-era inference. Ren has since revised it to roughly 15ml full scope per GPT-4-class prompt, about 5ml counting only the datacentre, and stated the original was time-specific and assumption-based and should not be used to describe today's optimised systems. OpenAI puts an average query near 0.3ml. The gap is partly definitional, since the original counted water evaporated at power plants and modelled a coal-heavy 2023 Iowa grid, but the video presents a superseded number as current and the revision is roughly 35x. The supporting map is the OECD Environmental Outlook from 2008 projecting 2030, an eighteen-year-old projection presented without noting newer work exists."
+      },
+      "named_companies": [],
+      "markers": ["no_position_disclosure", "no_methodology"],
+      "marker_note": "Cites a real source, which is what made the retraction findable. That is better than an unsourced claim.",
+      "expressions": ["FIW", "PHO", "CGW"],
+      "expression_note": "Downgrade the thesis, do not discard the instruments. Water scarcity is a genuine long-horizon theme and these are ordinary, liquid exchange-traded funds. What does not survive is the specific artificial-intelligence urgency, which rested on the retracted figure."
+    }
+  ]
+}
