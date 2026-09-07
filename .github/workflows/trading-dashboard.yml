@@ -8,15 +8,24 @@ name: Trading dashboard
 # 6:45am, 1:00pm or 5:30pm. Silent staleness on a decision aid is worse than no
 # dashboard.
 #
-# PRIVACY GATE. Publishing to GitHub Pages from this PUBLIC repo is acceptable
-# only while the dashboard renders a MODEL portfolio built from public rules and
-# public price data, which is all this repo contains today. DRY_RUN is True at
-# main.py line 19 and nothing here has ever placed an order, so there are no
-# positions to leak. THE DAY IT RENDERS REAL HOLDINGS, REAL SIZING OR REAL
-# ACCOUNT VALUES, MOVE PAGES TO A PRIVATE REPO. Do not inherit this decision
-# without re-reading it.
-# Pages stays OFF until the repository variable PUBLISH_PAGES is set to 'true'.
-# Until then the build still runs and uploads a private workflow artifact.
+# PRIVACY. The rendered dashboard goes to CLOUDFLARE PAGES BEHIND CLOUDFLARE
+# ACCESS, so it requires a real login (email one-time code or Google) and is not
+# readable by the public. It is deliberately NOT GitHub Pages: access control
+# there needs GitHub Enterprise Cloud plus an organization, and site visibility
+# is a separate setting from repository visibility, so a private repo would
+# still publish a public site. There is no login option there on a personal
+# plan.
+# scripts/provision_access.py creates the Access policy BEFORE the deploy runs,
+# so the site is never served without a login even momentarily, and the deploy
+# is skipped if that fails.
+# The SOURCE repo stays public, which is fine: every input is already committed
+# here, DRY_RUN is True at main.py line 19, and nothing has ever placed an
+# order, so the page renders a model portfolio rather than a position book.
+# THE DAY IT RENDERS REAL HOLDINGS, REAL SIZING OR REAL ACCOUNT VALUES, the repo
+# itself should go private too. Do not inherit that decision without re-reading it.
+# Deploy stays OFF until repository variable PUBLISH_PAGES is 'true' AND the
+# CLOUDFLARE_API_TOKEN secret exists. Until then the build still runs and
+# uploads a private workflow artifact, so nothing is blocked.
 #
 # All times UTC. GitHub cron does not observe daylight saving, so these slots
 # drift an hour in winter. For a thrice-daily dashboard that is harmless, and
@@ -38,8 +47,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # Never let two runs race over the same Pages deployment.
 concurrency:
@@ -119,24 +126,67 @@ jobs:
           path: site/
           retention-days: 14
 
-      - name: Upload Pages artifact
-        if: vars.PUBLISH_PAGES == 'true'
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: site/
-
+  # Cloudflare Pages, NOT GitHub Pages. GitHub Pages cannot be login-gated on a
+  # personal account: access control there needs Enterprise Cloud plus an
+  # organization, and repo visibility is a separate setting from site
+  # visibility, so making the repo private would NOT make the site private.
+  # Cloudflare Access puts a real login in front (email one-time code or Google)
+  # on the Zero Trust free tier. Erik already runs this exact pattern on the
+  # escrow portal, so it is proven on his account rather than theoretical.
+  #
+  # Skips cleanly until CLOUDFLARE_API_TOKEN exists, so a missing credential is
+  # a skip and not a red run.
   deploy:
     needs: build
     if: vars.PUBLISH_PAGES == 'true'
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     outputs:
-      page_url: ${{ steps.deployment.outputs.page_url }}
+      page_url: ${{ steps.url.outputs.page_url }}
     steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Check for the Cloudflare credential
+        id: gate
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "CLOUDFLARE_API_TOKEN is not set. Skipping the deploy."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ORDER MATTERS. A Pages project is live the instant it first deploys, so
+      # the login has to exist BEFORE any content is served. If this step fails
+      # the deploy below does not run, which is the safe direction to fail in.
+      - name: Put the login in front first
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ACCESS_HOSTNAME: trading-dashboard.pages.dev
+          ACCESS_ALLOWED_EMAILS: ${{ vars.ACCESS_ALLOWED_EMAILS || 'erik.thordal.christensen@gmail.com' }}
+        run: python scripts/provision_access.py
+
+      - uses: actions/download-artifact@v4
+        if: steps.gate.outputs.ready == 'true'
+        with:
+          name: trading-dashboard
+          path: site
+
+      - name: Deploy to Cloudflare Pages
+        if: steps.gate.outputs.ready == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy site --project-name=trading-dashboard --branch=main
+
+      # The per-deployment URL changes every run; the project alias does not, so
+      # that is what belongs in a phone notification.
+      - name: Resolve the stable URL
+        id: url
+        if: steps.gate.outputs.ready == 'true'
+        run: echo "page_url=https://trading-dashboard.pages.dev" >> "$GITHUB_OUTPUT"
 
   notify:
     needs: [build, deploy]
