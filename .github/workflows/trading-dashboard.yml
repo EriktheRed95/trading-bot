@@ -132,6 +132,8 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
@@ -152,21 +154,32 @@ jobs:
         env:
           TOPIC: ${{ secrets.NTFY_TOPIC_TRADING }}
           MODE: ${{ vars.TRADING_NOTIFY || 'failures' }}
-          STATUS: ${{ needs.build.result }}
+          BUILD: ${{ needs.build.result }}
+          DEPLOY: ${{ needs.deploy.result }}
           ASOF: ${{ needs.build.outputs.asof }}
           REGIME: ${{ needs.build.outputs.regime }}
-          PAGES_URL: ${{ vars.DASHBOARD_URL }}
+          PAGES_URL: ${{ needs.deploy.outputs.page_url || vars.DASHBOARD_URL }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           if [ -z "$TOPIC" ]; then
             echo "NTFY_TOPIC_TRADING is not set, so there is nobody to notify. Skipping."
             exit 0
           fi
-          if [ "$STATUS" = "success" ] && [ "$MODE" != "always" ]; then
-            echo "Build succeeded and TRADING_NOTIFY is '$MODE', so staying quiet."
+
+          # 'skipped' is the NORMAL deploy result while Pages is off, so it must
+          # count as fine. Treating it as failure would fire an urgent alert on
+          # every healthy run, which is the fastest way to teach someone to
+          # ignore the alerts entirely.
+          ok=true
+          [ "$BUILD" = "success" ] || ok=false
+          case "$DEPLOY" in success|skipped|"") ;; *) ok=false ;; esac
+
+          if [ "$ok" = "true" ] && [ "$MODE" != "always" ]; then
+            echo "Healthy run and TRADING_NOTIFY is '$MODE', so staying quiet."
             exit 0
           fi
-          if [ "$STATUS" = "success" ]; then
+
+          if [ "$ok" = "true" ]; then
             title="Trading dashboard updated"
             prio="default"
             tags="chart_with_upwards_trend"
@@ -175,11 +188,14 @@ jobs:
             title="Trading dashboard FAILED"
             prio="urgent"
             tags="rotating_light"
-            body="The build did not complete (result: ${STATUS}). The dashboard on your phone is now stale. Open the run log to see why."
+            # Stale rather than broken is the distinction that matters, and it is
+            # the reason this job was moved off the laptop in the first place.
+            body="build=${BUILD} deploy=${DEPLOY}. The last good dashboard is still there, so the page is STALE rather than broken. Do not read it as current."
           fi
-          link="${PAGES_URL:-$RUN_URL}"
+
+          link="$PAGES_URL"
           label="Open dashboard"
-          if [ -z "$PAGES_URL" ] || [ "$STATUS" != "success" ]; then
+          if [ -z "$PAGES_URL" ] || [ "$ok" != "true" ]; then
             link="$RUN_URL"
             label="Open run log"
           fi
