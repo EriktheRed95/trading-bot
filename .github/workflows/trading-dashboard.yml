@@ -257,3 +257,39 @@ jobs:
             -d "${body}" \
             "https://ntfy.sh/${TOPIC}" || true
           echo "notification attempted"
+
+      # Dead-man's switch, and specifically the answer to the 60-day trap in
+      # the header comment. Every alert above is sent BY this workflow, so none
+      # of them can fire on the day the workflow stops running at all. A
+      # heartbeat inverts that: healthchecks.io expects a ping on a schedule and
+      # alerts when the pings STOP, which is the only way to learn the schedule
+      # was silently disabled.
+      #
+      # Configure the check as Simple with a period of 26 hours and a 1 hour
+      # grace. The dashboard runs three times every weekday, so a 26 hour window
+      # tolerates a weekend gap of one day but still catches a real stoppage
+      # inside two. A ping failure is swallowed: telemetry must never fail the
+      # dashboard it is watching.
+      - name: Heartbeat
+        if: always()
+        env:
+          HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL_TRADING }}
+          BUILD: ${{ needs.build.result }}
+          DEPLOY: ${{ needs.deploy.result }}
+        run: |
+          if [ -z "$HEALTHCHECK_URL" ]; then
+            echo "HEALTHCHECK_URL_TRADING is not set, so no heartbeat. Skipping."
+            exit 0
+          fi
+          ok=true
+          [ "$BUILD" = "success" ] || ok=false
+          case "$DEPLOY" in success|skipped|"") ;; *) ok=false ;; esac
+          if [ "$ok" = "true" ]; then
+            curl -fsS --max-time 15 -d "build=$BUILD deploy=$DEPLOY" \
+              "$HEALTHCHECK_URL" > /dev/null || true
+            echo "heartbeat: success"
+          else
+            curl -fsS --max-time 15 -d "build=$BUILD deploy=$DEPLOY" \
+              "$HEALTHCHECK_URL/fail" > /dev/null || true
+            echo "heartbeat: fail signalled"
+          fi
