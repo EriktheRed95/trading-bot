@@ -231,6 +231,49 @@ overnight return, monthly rebalance, hold the top names overnight only:
 4. **Does it survive publication?** Yes, decayed. Pre-2019 23.5% (Sharpe 1.59),
    post-2019 17.8% (Sharpe 1.20). Post-2019 at 3% positions: **22.9%, Sharpe 1.24.**
 
+### Walk-forward: it survives, and the overfitting is measured not guessed
+
+[`walk_forward_overnight.py`](walk_forward_overnight.py) trains on 4 years, picks
+the configuration using **only** that window, tests on the next year, and rolls.
+**16 non-overlapping out-of-sample windows, 2011-2026:**
+
+| Out-of-sample, stitched | 0bp | 0.5bp | 1bp/side |
+|---|---:|---:|---:|
+| **Walk-forward selected** | **31.8%** | 28.5% | 25.3% |
+| Fixed lb=252 N=33 (control 1) | 21.9% | 18.8% | 15.9% |
+| Volatility-ranked N=33 (control 3) | 17.2% | 14.3% | 11.4% |
+| SPY buy & hold | 14.4% | 14.4% | 14.4% |
+| EW hold, all eligible names | 13.4% | 13.4% | 13.4% |
+| **Random N=33 overnight (control 2, the floor)** | **9.3%** | 6.5% | 3.9% |
+
+In-sample optimum was 46.5%; out-of-sample is 31.8%. **The overfitting tax is
+~14 points of CAGR and ~0.3 of Sharpe**, stable at every cost level. Parameter
+choice is stable (lb=252/N=10 in 9 of 16 windows, lb=126/N=10 in 6). Unlike the
+undifferentiated version, it clears every benchmark even at 1bp/side. There are
+bad years: 2022 was **-5.1%** out of sample.
+
+### ⚠️ Biggest caveat: most of it is a volatility tilt
+
+Read the control rows above, not the headline. At N=33 and zero cost: random
+**9.3%**, volatility-ranked **17.2%**, overnight-signal-ranked **21.9%**. So
+**volatility explains roughly 63% of the edge over random; the overnight signal
+adds the remaining 37%.** The signal is real and separable, but calling this a
+pure overnight anomaly overstates it. Most of the lift is tilting into
+high-volatility names — and *that* part is not new information.
+
+Timing still checks out out-of-sample: the same basket held **all day** returns
+21.5% at Sharpe 0.82 versus 31.8% at 1.56 held overnight.
+
+### Concentration: less dangerous than feared, with a blind spot
+
+[`stress_gaps_overnight.py`](stress_gaps_overnight.py), same hazard model as
+`stress_gaps.py`: worst-case drawdown **-37% at N=10 vs -32% at N=83**. That is a
+far narrower spread than Strategy C's -77%/-31%, because a 10% position absorbs
+even a -90% single-name gap. **But the Monte Carlo injects independent
+single-name gaps and does not model a correlated market-wide overnight gap** —
+which is precisely this strategy's dominant tail, since it holds only through
+that window and earns nothing intraday to cushion it.
+
 ### ⚠️ The unresolved blocker: execution
 
 The whole result rides on capturing the **official opening and closing auction
