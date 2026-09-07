@@ -878,6 +878,7 @@ table.cmp tr.r0 td{font-style:italic}
 table.port td.sk{width:140px;padding:2px 8px}
 table.port td.pos{color:var(--good)}
 table.port td.neg{color:var(--critical)}
+table.port td.tiny{font-size:.78rem;color:var(--ink2)}
 svg.spark{display:block}
 .stale{display:flex;gap:12px;align-items:flex-start;border-radius:10px;padding:12px 16px;
   margin:0 0 14px;border:1px solid var(--ring);border-left:5px solid var(--good);
@@ -1250,28 +1251,63 @@ def render_portfolio(port):
 def render_tips(tips):
     counts = tips.get('counts', {})
     where = tips.get('where', {})
-    o = ['<table class="port"><thead><tr><th>Ticker</th><th>His verdict</th>'
-         '<th>Price</th><th>vs 200d</th><th>12-1 mom</th><th>Ann. vol</th>'
+    qual = tips.get('quality', {}) or {}
+    o = ['<table class="port"><thead><tr><th>Ticker</th>'
+         '<th>Trend screen</th><th>Quality screen</th><th>Both?</th>'
+         '<th>vs 200d</th><th>Ann. vol</th><th>Valuation</th>'
          '<th>Flags</th></tr></thead><tbody>']
     for r in tips.get('rows', []):
         if r.get('verdict') == 'NO DATA':
             continue
         n = counts.get(r['ticker'], 0)
+        q = qual.get(r['ticker'], {})
         flags = []
         if r.get('fragile'):
             flags.append('<span class="chip warn">FRAGILE</span>')
         if n >= 2:
             flags.append(f'<span class="chip crit">RECURS x{n}</span>')
+        if q.get('warnings'):
+            flags.append('<span class="chip crit">EARNINGS FLAG</span>')
         elig = r['verdict'] == 'ELIGIBLE'
+        qlabel = q.get('label', 'not run')
+        qgood = qlabel == 'QUALITY'
+        # A 5/5 numeric score carrying a warning is not a clean pass.
+        if elig and qgood:
+            both, bcls = ('FLAGGED', 'warn') if q.get('warnings') else ('YES', 'good')
+        else:
+            both, bcls = 'no', 'crit'
         o.append(
             f'<tr><td><b>{esc(r["ticker"])}</b></td>'
             f'<td class="{"pos" if elig else "neg"}"><b>{esc(r["verdict"])}</b></td>'
-            f'<td>${r["price"]:,.2f}</td>'
+            f'<td class="{"pos" if qgood else "neg"}">{esc(qlabel)}'
+            + (f' {q["score"]}/5' if q.get('score') is not None else '') + '</td>'
+            f'<td><span class="chip {bcls}">{both}</span></td>'
             f'<td class="{"pos" if r["pct_vs_sma"] >= 0 else "neg"}">'
             f'{r["pct_vs_sma"]:+.0f}%</td>'
-            f'<td>{r["mom12"]:+.0f}%</td><td>{r["vol"]:.0f}%</td>'
+            f'<td>{r["vol"]:.0f}%</td>'
+            f'<td class="tiny">{esc(q.get("valuation", ""))[:64]}</td>'
             f'<td>{"".join(flags)}</td></tr>')
     o.append('</tbody></table>')
+    o.append('<p class="note">Two screens, deliberately separate. The trend screen '
+             'answers WHEN and how much risk; the quality screen answers WHAT is '
+             'worth owning. A high-conviction name passes both. Income-statement '
+             'and cash-flow figures come from SEC filings, not from a data vendor '
+             'and not from the video.</p>')
+    warned = [(t, q) for t, q in qual.items() if q.get('warnings')]
+    for t, q in warned:
+        for w in q['warnings']:
+            o.append(f'<div class="killer"><b>{esc(t)} earnings quality:</b> '
+                     f'{esc(w)}</div>')
+    verdicts = [(t, q.get('verdict'), q.get('why')) for t, q in qual.items()
+                if q.get('verdict')]
+    if verdicts:
+        o.append('<table class="port"><thead><tr><th>Ticker</th>'
+                 '<th>Provisional fundamental verdict</th><th>Why</th></tr>'
+                 '</thead><tbody>')
+        for t, v, why in verdicts:
+            o.append(f'<tr><td><b>{esc(t)}</b></td><td>{esc(v)}</td>'
+                     f'<td class="tiny">{esc(why or "")}</td></tr>')
+        o.append('</tbody></table>')
 
     recur = {t: n for t, n in counts.items() if n >= 2}
     if recur:
@@ -1619,8 +1655,9 @@ def render_md(panels, live, macro, on_res, dry_run, dry_src, port=None, tips=Non
                 L += [f"**Where this study is weak:** {p['caveat']}", ""]
             if p.get('tipverdicts') and tips:
                 counts = tips.get('counts', {})
-                L += ["| Ticker | His verdict | Price | vs 200d | 12-1 mom | Ann. vol | Flags |",
-                      "|---|---|---:|---:|---:|---:|---|"]
+                qual = tips.get('quality', {}) or {}
+                L += ["| Ticker | Trend | Quality | Both? | vs 200d | Ann. vol | Valuation | Flags |",
+                      "|---|---|---|---|---:|---:|---|---|"]
                 for r in tips.get('rows', []):
                     if r.get('verdict') == 'NO DATA':
                         continue
@@ -1630,12 +1667,29 @@ def render_md(panels, live, macro, on_res, dry_run, dry_src, port=None, tips=Non
                         fl.append("FRAGILE")
                     if n >= 2:
                         fl.append(f"RECURS x{n}")
-                    L.append(f"| {r['ticker']} | {r['verdict']} | "
-                             f"${r['price']:,.2f} | {r['pct_vs_sma']:+.0f}% | "
-                             f"{r['mom12']:+.0f}% | {r['vol']:.0f}% | "
-                             f"{', '.join(fl)} |")
+                    q = qual.get(r['ticker'], {})
+                    if q.get('warnings'):
+                        fl.append("EARNINGS FLAG")
+                    ql = q.get('label', 'not run')
+                    if q.get('score') is not None:
+                        ql += f" {q['score']}/5"
+                    if r['verdict'] == 'ELIGIBLE' and q.get('label') == 'QUALITY':
+                        both = "FLAGGED" if q.get('warnings') else "YES"
+                    else:
+                        both = "no"
+                    L.append(f"| {r['ticker']} | {r['verdict']} | {ql} | {both} | "
+                             f"{r['pct_vs_sma']:+.0f}% | {r['vol']:.0f}% | "
+                             f"{q.get('valuation','')[:56]} | {', '.join(fl)} |")
                 L.append("")
                 recur = {t: n for t, n in counts.items() if n >= 2}
+                for _tk, q in (tips.get('quality', {}) or {}).items():
+                    for w in q.get('warnings', []):
+                        L.append(f"- **{_tk} earnings quality:** {w}")
+                L.append("")
+                L += ["Two screens, deliberately separate. Trend answers WHEN and "
+                      "how much risk; quality answers WHAT is worth owning. A "
+                      "high-conviction name passes both. Income-statement and "
+                      "cash-flow figures come from SEC filings.", ""]
                 if recur:
                     L += ["**Recurrence is a CAUTION flag, not a buy signal.** "
                           + ", ".join(f"{t} appears in {n} saved sources"

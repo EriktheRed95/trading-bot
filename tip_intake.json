@@ -2,16 +2,16 @@
   "regime": {
     "risk_on": true,
     "spy": 770.1900024414062,
-    "sma200": 709.8685516357422,
+    "sma200": 709.8685494995117,
     "asof": "2026-09-04"
   },
   "rows": [
     {
       "ticker": "MU",
       "price": 1016.5900268554688,
-      "sma200": 606.3405877685547,
-      "pct_vs_sma": 67.65990061735894,
-      "mom12": 569.0861955115065,
+      "sma200": 606.3405876922608,
+      "pct_vs_sma": 67.65990063845504,
+      "mom12": 569.0862733514456,
       "mom6": 125.54034848846109,
       "vol": 98.46837861862535,
       "verdict": "ELIGIBLE",
@@ -33,8 +33,8 @@
     {
       "ticker": "MRVL",
       "price": 223.5500030517578,
-      "sma200": 151.71072845458986,
-      "pct_vs_sma": 47.35279787327033,
+      "sma200": 151.71072834014893,
+      "pct_vs_sma": 47.35279798442391,
       "mom12": 246.101370711742,
       "mom6": 136.24766291062232,
       "vol": 96.47949552330374,
@@ -79,6 +79,120 @@
       "reason": "below its 200-day simple moving average, so in a downtrend; 12-month-minus-1-month momentum is negative or flat"
     }
   ],
+  "quality": {
+    "MU": {
+      "label": "QUALITY",
+      "score": 5,
+      "flags": [],
+      "verdict": "wonderful business at a fair price",
+      "why": "quality at a reasonable price",
+      "valuation": "P/E 23.0, fwd P/E 6.6, EV/EBITDA 16.5, PEG 0.15, FCF yield +2.3%",
+      "warnings": [],
+      "from_filings": true,
+      "gm": 0.7256906750559408,
+      "om": 0.6562576157033033,
+      "nm": 0.5590646254735583,
+      "fcf": 26172000000,
+      "rev_g": 1.8820355649203462,
+      "nonop_share": null
+    },
+    "AAOI": {
+      "label": "SPECULATIVE",
+      "score": 2,
+      "flags": [
+        "unprofitable (negative net margin)",
+        "burning cash (negative FCF)"
+      ],
+      "verdict": "pre-profit speculation",
+      "why": "negative net margin - no earnings to value",
+      "valuation": "no P/E (unprofitable), fwd P/E 22.9, EV/EBITDA -271.8, PEG 0.78, FCF yield -3.8%",
+      "warnings": [],
+      "from_filings": true,
+      "gm": 0.28915885027769855,
+      "om": -0.11310300854069835,
+      "nm": -0.09567595684346528,
+      "fcf": -340804000,
+      "rev_g": 0.6184589648401964,
+      "nonop_share": null
+    },
+    "MRVL": {
+      "label": "QUALITY",
+      "score": 5,
+      "flags": [],
+      "verdict": "earnings quality flag",
+      "why": "41% of net income is non-operating, so the P/E is flattered - judge it on operating earnings, not reported ones",
+      "valuation": "P/E 74.0, fwd P/E 33.3, EV/EBITDA 69.2, PEG 1.19, FCF yield +0.9%",
+      "warnings": [
+        "41% of net income sits ABOVE operating income, so it is not from operations (non-operating income +1.50B)"
+      ],
+      "from_filings": true,
+      "gm": 0.5221104091933589,
+      "om": 0.1652116864014899,
+      "nm": 0.2793456292392834,
+      "fcf": 1730100000,
+      "rev_g": 0.5375091515496624,
+      "nonop_share": 0.40857608242736465
+    },
+    "ALOY": {
+      "label": "SPECULATIVE",
+      "score": 2,
+      "flags": [
+        "unprofitable (negative net margin)",
+        "burning cash (negative FCF)"
+      ],
+      "verdict": "mediocre",
+      "why": "cash-burning despite profits",
+      "valuation": "no P/E (unprofitable), fwd P/E -72.1, EV/EBITDA -3.0, FCF yield -2.7%",
+      "warnings": [],
+      "from_filings": true,
+      "gm": 0.29679,
+      "om": -45.77612,
+      "nm": 0.0,
+      "fcf": -19200270,
+      "rev_g": 0.827,
+      "nonop_share": null
+    },
+    "USAR": {
+      "label": "SPECULATIVE",
+      "score": 1,
+      "flags": [
+        "unprofitable (negative net margin)",
+        "burning cash (negative FCF)"
+      ],
+      "verdict": "pre-profit speculation",
+      "why": "negative net margin - no earnings to value",
+      "valuation": "no P/E (unprofitable), fwd P/E 587.0, EV/EBITDA -26.0, FCF yield -2.5%",
+      "warnings": [
+        "IMPLAUSIBLE: net margin -2159%"
+      ],
+      "from_filings": true,
+      "gm": -0.09740161069746239,
+      "om": -9.494757635617688,
+      "nm": -21.592994985564506,
+      "fcf": -106071000.0,
+      "rev_g": null,
+      "nonop_share": null
+    },
+    "MP": {
+      "label": "SPECULATIVE",
+      "score": 2,
+      "flags": [
+        "unprofitable (negative net margin)",
+        "burning cash (negative FCF)"
+      ],
+      "verdict": "pre-profit speculation",
+      "why": "negative net margin - no earnings to value",
+      "valuation": "no P/E (unprofitable), fwd P/E 61.6, EV/EBITDA 237.3, FCF yield -5.2%",
+      "warnings": [],
+      "from_filings": true,
+      "gm": 0.42326,
+      "om": -0.41543731191281597,
+      "nm": -0.19850217927348818,
+      "fcf": -504576000,
+      "rev_g": 0.2612838474119843,
+      "nonop_share": null
+    }
+  },
   "counts": {
     "MRVL": 1,
     "MU": 1,

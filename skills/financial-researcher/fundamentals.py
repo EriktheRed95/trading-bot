@@ -1,112 +1,255 @@
-"""Fundamental researcher - a Buffett-style snapshot from free SEC EDGAR data.
+"""Fundamental researcher - a Buffett-style snapshot, built to do the heavy lifting
+in the script so Claude spends few tokens.
 
-ticker -> CIK -> EDGAR companyfacts (structured XBRL financials) -> compute the
-quality/growth/balance-sheet/cash/valuation checklist, flag red flags, and print
-the URL of the latest 10-K for narrative reading.
+What changed (token-efficiency rewrite):
+  - BATCH: `python fundamentals.py T1 T2 T3 ...` processes the whole basket in ONE
+    process, so Claude synthesizes all names in a single pass instead of one
+    agent per ticker (the boot cost was being paid N times).
+  - CLEAN NUMBERS: margins/returns/leverage/valuation come from yfinance (same
+    source + logic as the trade screen's fundamentals.py), NOT hand-rolled XBRL.
+    The old XBRL math mistagged fiscal years and printed >100% margins, forcing
+    Claude to reconcile against out-of-band "known-good" values. Gone.
+  - PROVISIONAL VERDICT: the script pre-computes a Buffett verdict bucket so Claude
+    only refines the prose, not derives the call.
+  - 10-K URL still from SEC EDGAR; add --filing to also fetch a compact narrative
+    digest inline (business / customer concentration / risks), so one call yields
+    everything needed for the memo.
+  - The metric legend no longer prints every run; add --legend to show it.
 
-Only needs `requests` + (optionally) `yfinance` for the current price.
-EDGAR requires a descriptive User-Agent; set one below.
+Usage:
+  python fundamentals.py NVDA RKLB PL            # numbers + provisional verdict + 10-K URL
+  python fundamentals.py NVDA RKLB --filing      # also fetch the 10-K narrative digest
+  python fundamentals.py NVDA --legend           # print the metric legend too
 
-Usage:  python fundamentals.py AAPL
+NOT financial advice - a discipline check. Pair with trade-identifier (when/how much).
 """
+import os
 import sys
 
+import numpy as np
 import requests
 
 # SEC requires a "Name email" User-Agent; punctuation/parentheses can trip its WAF.
 UA = {"User-Agent": "EriktheRed95 erik9@gmail.com", "Accept-Encoding": "gzip, deflate"}
 TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
-FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
 SUBS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
 
-REV = ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet"]
-NI = ["NetIncomeLoss"]
-GROSS = ["GrossProfit"]
-OPINC = ["OperatingIncomeLoss"]
-EQUITY = ["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"]
-CUR_ASSETS = ["AssetsCurrent"]
-CUR_LIAB = ["LiabilitiesCurrent"]
-DEBT = ["LongTermDebtNoncurrent", "LongTermDebt"]
-CASH = ["CashAndCashEquivalentsAtCarryingValue"]
-OCF = ["NetCashProvidedByUsedInOperatingActivities",
-       "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"]
-CAPEX = ["PaymentsToAcquirePropertyPlantAndEquipment"]
-SHARES = ["WeightedAverageNumberOfDilutedSharesOutstanding",
-          "WeightedAverageNumberOfSharesOutstandingBasic"]
+_CIK_CACHE = {}
 
 
-def get_json(url):
+# ----------------------------------------------------------------------------
+# Clean fundamentals from yfinance (same fields + handling as the trade screen)
+# ----------------------------------------------------------------------------
+def _get(info, *keys):
+    for k in keys:
+        v = info.get(k)
+        if v is not None and not (isinstance(v, float) and np.isnan(v)):
+            return v
+    return None
+
+
+def fundamentals(t):
+    import yfinance as yf
+    tk = yf.Ticker(t)
+    try:
+        info = tk.info or {}
+    except Exception:
+        info = {}
+    if not info or (_get(info, "marketCap") is None and _get(info, "trailingPE") is None
+                    and _get(info, "totalRevenue") is None):
+        return None
+    d2e = _get(info, "debtToEquity")  # yfinance reports as a percentage (50 = 0.5x)
+    out = {
+        "name": _get(info, "shortName", "longName") or t,
+        "mktcap": _get(info, "marketCap"),
+        "pe": _get(info, "trailingPE"),
+        "fpe": _get(info, "forwardPE"),
+        "ps": _get(info, "priceToSalesTrailing12Months"),
+        "ev_ebitda": _get(info, "enterpriseToEbitda"),
+        "peg": _get(info, "pegRatio", "trailingPegRatio"),
+        "gm": _get(info, "grossMargins"),
+        "om": _get(info, "operatingMargins"),
+        "nm": _get(info, "profitMargins"),
+        "roe": _get(info, "returnOnEquity"),
+        "roa": _get(info, "returnOnAssets"),
+        "rev_g": _get(info, "revenueGrowth"),
+        "d2e": (d2e / 100.0) if d2e is not None else None,
+        "current": _get(info, "currentRatio"),
+        "fcf": _get(info, "freeCashflow"),
+        "rev": _get(info, "totalRevenue"),
+        "warnings": [],
+        "from_filings": False,
+        "sources": {},
+        "nonop_share": None,
+    }
+
+    # Income-statement and cash-flow numbers come from the FILINGS, not yfinance.
+    # yfinance printed an 80% operating margin against a 73% gross margin for MU,
+    # and -$0.89B of free cash flow for AAOI against about -$0.34B in the filings.
+    # Price-based multiples stay with yfinance: XBRL has no price.
+    try:
+        import xbrl_fundamentals as xf
+        x = xf.pull(t)
+    except Exception as e:
+        x = None
+        out["warnings"].append(f"filing pull failed, falling back to yfinance: {e}")
+    if x:
+        out["from_filings"] = True
+        out["sources"] = x.get("source", {})
+        out["warnings"] += x.get("warnings", [])
+        out["nonop_share"] = x.get("nonop_share")
+        for src, dst in (("gross_margin", "gm"), ("operating_margin", "om"),
+                         ("net_margin", "nm"), ("fcf", "fcf"),
+                         ("rev_growth_ttm", "rev_g"), ("roe", "roe"),
+                         ("revenue", "rev")):
+            if x.get(src) is not None:
+                out[dst] = x[src]
+    return out
+
+
+def quality_verdict(f):
+    """Score balance-sheet + profitability health (0-5). Same rules as the screen."""
+    score, flags = 0, []
+    nm, roe, fcf, rev_g, d2e, current = (
+        f["nm"], f["roe"], f["fcf"], f["rev_g"], f["d2e"], f["current"])
+    if nm is not None:
+        if nm > 0.10:
+            score += 1
+        elif nm <= 0:
+            flags.append("unprofitable (negative net margin)")
+    if roe is not None and roe > 0.15:
+        score += 1
+    if fcf is not None:
+        if fcf > 0:
+            score += 1
+        else:
+            flags.append("burning cash (negative FCF)")
+    if rev_g is not None:
+        if rev_g > 0.05:
+            score += 1
+        elif rev_g < 0:
+            flags.append("revenue shrinking")
+    if d2e is not None:
+        if d2e < 1.0:
+            score += 1
+        elif d2e > 2.0:
+            flags.append(f"high leverage (D/E {d2e:.1f}x)")
+    if current is not None and current < 1.0:
+        flags.append(f"weak liquidity (current ratio {current:.2f})")
+    if score >= 4 and not any("unprofit" in x or "burning" in x for x in flags):
+        label = "QUALITY"
+    elif (nm is not None and nm <= 0) or (fcf is not None and fcf < 0):
+        label = "SPECULATIVE"
+    else:
+        label = "MIXED"
+    return label, score, flags
+
+
+def fcf_yield(f):
+    return (f["fcf"] / f["mktcap"]) if (f["fcf"] and f["mktcap"]) else None
+
+
+def valuation_note(f):
+    notes = []
+    if f["pe"] is not None:
+        notes.append(f"P/E {f['pe']:.1f}")
+    elif f["nm"] is not None and f["nm"] <= 0:
+        notes.append("no P/E (unprofitable)")
+    if f["fpe"] is not None:
+        notes.append(f"fwd P/E {f['fpe']:.1f}")
+    if f["ev_ebitda"] is not None:
+        notes.append(f"EV/EBITDA {f['ev_ebitda']:.1f}")
+    if f["peg"] is not None:
+        notes.append(f"PEG {f['peg']:.2f}")
+    fy = fcf_yield(f)
+    if fy is not None:
+        notes.append(f"FCF yield {fy:+.1%}")
+    return ", ".join(notes) if notes else "limited valuation data"
+
+
+def buffett_verdict(f, score):
+    """See below. Note the non-operating adjustment added 2026-09-07."""
+    """Pre-compute a PROVISIONAL Buffett bucket from the numbers alone.
+    Claude refines this with the 10-K narrative - it is a starting point, not final."""
+    nm, fcf, d2e, rev_g, current = f["nm"], f["fcf"], f["d2e"], f["rev_g"], f["current"]
+    peg, fpe = f["peg"], f["fpe"]
+    # Cheap on growth-adjusted terms overrides a low FCF yield (natural for fast
+    # growers); only call it rich when it is NOT cheap and the multiple is steep.
+    cheap = (peg is not None and 0 < peg < 1.2) or (fpe is not None and 0 < fpe < 18)
+    # A price/earnings multiple built on earnings that are largely NOT from
+    # operations is flattered: the denominator is not repeatable. Marvell showed
+    # 41% of net income sitting above operating income. Refuse to call that cheap.
+    nonop = f.get("nonop_share")
+    if nonop is not None and nonop > 0.25:
+        cheap = False
+    rich = (not cheap) and ((peg is not None and peg > 2.0)
+                            or (fpe is not None and fpe > 30))
+    # "Pre-profit" means it does not actually earn money (negative net margin).
+    # A profitable business with negative FCF is a cash/capex flag, not pre-profit.
+    if nm is not None and nm < 0:
+        distress = sum(bool(x) for x in (
+            fcf is not None and fcf < 0,
+            d2e is not None and d2e > 3.0,
+            current is not None and current < 0.7,
+            rev_g is not None and rev_g < 0,
+        ))
+        if distress >= 3:
+            return "avoid", "unprofitable + leverage/liquidity/shrinking distress"
+        return "pre-profit speculation", "negative net margin - no earnings to value"
+    burning = fcf is not None and fcf < 0
+    if nonop is not None and nonop > 0.25:
+        return ("earnings quality flag",
+                f"{nonop:.0%} of net income is non-operating, so the P/E is "
+                f"flattered - judge it on operating earnings, not reported ones")
+    if score >= 4 and not burning:
+        return ("quality but pricey", "strong business, demanding multiple") if rich \
+            else ("wonderful business at a fair price", "quality at a reasonable price")
+    if rich:
+        return "quality but pricey", "full price" + (", and burning cash" if burning else " for middling quality")
+    return "mediocre", "cash-burning despite profits" if burning else "profitable but unremarkable economics"
+
+
+# ----------------------------------------------------------------------------
+# SEC EDGAR: ticker -> CIK -> latest 10-K URL
+# ----------------------------------------------------------------------------
+def _get_json(url):
     r = requests.get(url, headers=UA, timeout=30)
     r.raise_for_status()
     return r.json()
 
 
 def ticker_to_cik(ticker):
-    data = get_json(TICKERS_URL)
-    for row in data.values():
-        if row["ticker"].upper() == ticker.upper():
-            return str(row["cik_str"]).zfill(10), row["title"]
-    return None, None
-
-
-def annual(facts, concepts):
-    """Latest-per-fiscal-year annual values for the first matching concept.
-    Returns list of (fiscal_year, value) sorted ascending."""
-    src = facts.get("facts", {})
-    for space in ("us-gaap", "dei"):
-        for c in concepts:
-            node = src.get(space, {}).get(c)
-            if not node:
-                continue
-            units = node.get("units", {})
-            arr = units.get("USD") or units.get("shares") or next(iter(units.values()), [])
-            rows = [x for x in arr if str(x.get("form", "")).startswith("10-K")
-                    and x.get("fp") == "FY" and x.get("fy")]
-            if not rows:
-                rows = [x for x in arr if str(x.get("form", "")).startswith("10-K") and x.get("fy")]
-            if not rows:
-                continue
-            byfy = {}
-            for x in rows:
-                fy = x["fy"]
-                if fy not in byfy or x.get("end", "") > byfy[fy].get("end", ""):
-                    byfy[fy] = x
-            return [(fy, byfy[fy]["val"]) for fy in sorted(byfy)]
-    return []
-
-
-def cagr(series):
-    s = [(fy, v) for fy, v in series if v and v > 0]
-    if len(s) < 2:
-        return None
-    yrs = s[-1][0] - s[0][0]
-    return (s[-1][1] / s[0][1]) ** (1 / yrs) - 1 if yrs > 0 else None
-
-
-def latest(series):
-    return series[-1][1] if series else None
-
-
-def pct(x):
-    return f"{x*100:.1f}%" if x is not None else "n/a"
+    if not _CIK_CACHE:
+        try:
+            for row in _get_json(TICKERS_URL).values():
+                _CIK_CACHE[row["ticker"].upper()] = (str(row["cik_str"]).zfill(10), row["title"])
+        except Exception:
+            return None, None
+    return _CIK_CACHE.get(ticker.upper(), (None, None))
 
 
 def latest_10k(cik):
-    subs = get_json(SUBS_URL.format(cik=cik))
-    rec = subs.get("filings", {}).get("recent", {})
+    try:
+        rec = _get_json(SUBS_URL.format(cik=cik)).get("filings", {}).get("recent", {})
+    except Exception:
+        return None, None
     for i, form in enumerate(rec.get("form", [])):
-        if form == "10-K":
+        if form in ("10-K", "20-F"):
             acc = rec["accessionNumber"][i].replace("-", "")
             doc = rec["primaryDocument"][i]
-            cik_int = int(cik)
-            url = f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc}/{doc}"
+            url = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{acc}/{doc}"
             return url, rec["filingDate"][i]
     return None, None
 
 
+# ----------------------------------------------------------------------------
+# Formatting
+# ----------------------------------------------------------------------------
+def fmt_pct(x):
+    return f"{x:+.0%}" if x is not None else "n/a"
+
+
 def show_legend():
-    """Print the fundamental part of the metric legend so guidance appears with results."""
-    import os
     p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "METRICS_LEGEND.md")
     try:
         txt = open(p, encoding="utf-8").read()
@@ -118,113 +261,106 @@ def show_legend():
     print(body)
 
 
-def main(ticker):
+def report(ticker, want_filing):
+    print(f"\n{ticker}")
+    f = fundamentals(ticker)
+    if f is None:
+        print("   NO DATA - ticker not found or no fundamentals available")
+        return
+    print(f"   {f['name']}")
+    label, score, flags = quality_verdict(f)
+    src = "SEC filings" if f.get("from_filings") else "yfinance (FILINGS UNAVAILABLE)"
+    print(f"   margins [{src}]: gross {fmt_pct(f['gm'])} | op {fmt_pct(f['om'])} | net {fmt_pct(f['nm'])}")
+    print(f"   returns: ROE {fmt_pct(f['roe'])} | ROA {fmt_pct(f['roa'])} | rev growth {fmt_pct(f['rev_g'])}")
+    bs = []
+    if f["d2e"] is not None:
+        bs.append(f"D/E {f['d2e']:.2f}x")
+    if f["current"] is not None:
+        bs.append(f"current ratio {f['current']:.2f}")
+    if f["fcf"] is not None:
+        bs.append(f"FCF ${f['fcf']/1e9:+.2f}B")
+    if bs:
+        print(f"   balance/cash: {' | '.join(bs)}")
+    for w in f.get("warnings", []):
+        print(f"   !! {w}")
+    print(f"   QUALITY: {label} (score {score}/5)" + (f"  flags: {'; '.join(flags)}" if flags else ""))
+    print(f"   VALUATION: {valuation_note(f)}")
+    verdict, why = buffett_verdict(f, score)
+    print(f"   PROVISIONAL VERDICT: {verdict}  ({why})  <- refine with the 10-K narrative")
+
+    cik, _name = ticker_to_cik(ticker)
+    if not cik:
+        print("   10-K: no SEC EDGAR filer match (foreign/OTC line) - narrative is web-only")
+        return
+    url, filed = latest_10k(cik)
+    if not url:
+        print("   10-K: not found in recent EDGAR filings")
+        return
+    print(f"   10-K: {url}  (filed {filed})")
+    if want_filing:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        try:
+            import read_filing
+            print("   --- 10-K NARRATIVE DIGEST ---")
+            for line in read_filing.digest(url, company=f["name"]).splitlines():
+                print("   " + line)
+        except Exception as e:
+            print(f"   (filing digest unavailable: {e})")
+
+
+def main(argv):
     try:
         sys.stdout.reconfigure(encoding="utf-8")
     except Exception:
         pass
-    cik, name = ticker_to_cik(ticker)
-    if not cik:
-        print(f"Ticker {ticker} not found in SEC EDGAR (no US filer match).")
-        return
-    facts = get_json(FACTS_URL.format(cik=cik))
+    want_filing = "--filing" in argv
+    want_legend = "--legend" in argv
+    tickers = [a.upper() for a in argv if not a.startswith("--")]
+    if not tickers:
+        print("usage: python fundamentals.py TICKER [TICKER ...] [--filing] [--legend]")
+        sys.exit(1)
+    print("FUNDAMENTAL RESEARCHER - Buffett snapshot (clean numbers, batch). Not advice.")
+    print("Provisional verdict is from the numbers; refine with the 10-K narrative.")
+    print("=" * 70)
+    for t in tickers:
+        try:
+            report(t, want_filing)
+        except Exception as e:
+            print(f"\n{t}\n   ERROR: {e}")
+    if want_legend:
+        show_legend()
 
-    rev, ni = annual(facts, REV), annual(facts, NI)
-    gross, opinc = annual(facts, GROSS), annual(facts, OPINC)
-    eq, ca, cl = annual(facts, EQUITY), annual(facts, CUR_ASSETS), annual(facts, CUR_LIAB)
-    debt, cash = annual(facts, DEBT), annual(facts, CASH)
-    ocf, capex, sh = annual(facts, OCF), annual(facts, CAPEX), annual(facts, SHARES)
 
-    fy_lo = rev[0][0] if rev else (ni[0][0] if ni else "?")
-    fy_hi = rev[-1][0] if rev else (ni[-1][0] if ni else "?")
-    print(f"=== FUNDAMENTAL SNAPSHOT: {ticker.upper()} - {name} (CIK {cik}) ===")
-    print(f"Fiscal years: {fy_lo}-{fy_hi}\n")
-
-    def margin(num, den):
-        n, d = latest(num), latest(den)
-        return (n / d) if (n is not None and d) else None
-
-    print("QUALITY / PROFITABILITY")
-    print(f"  Revenue (latest): {latest(rev)/1e9:.2f}B   rev CAGR: {pct(cagr(rev))}" if latest(rev) else "  Revenue: n/a")
-    print(f"  Net income (latest): {latest(ni)/1e9:.2f}B   NI CAGR: {pct(cagr(ni))}" if latest(ni) else "  Net income: n/a")
-    rev_latest = latest(rev)
-    has_rev = bool(rev_latest and rev_latest >= 1e7)
-    if has_rev:
-        print(f"  Gross margin: {pct(margin(gross, rev))} | Operating margin: {pct(margin(opinc, rev))} | Net margin: {pct(margin(ni, rev))}")
-    else:
-        print("  Margins: n/a - negligible revenue (pre-commercial)")
-    roe = (latest(ni) / latest(eq)) if (latest(ni) is not None and latest(eq)) else None
-    print(f"  ROE (latest): {pct(roe)}")
-
-    print("\nCASH GENERATION")
-    fcf_series = []
-    omap = dict(ocf)
-    cmap = dict(capex)
-    for fy in sorted(set(omap) & set(cmap)):
-        fcf_series.append((fy, omap[fy] - cmap[fy]))
-    fcf = latest(fcf_series)
-    print(f"  Free cash flow (latest): {fcf/1e9:.2f}B" if fcf is not None else "  Free cash flow: n/a")
-    print(f"  FCF margin: {pct((fcf/rev_latest) if (fcf is not None and has_rev) else None)} | FCF CAGR: {pct(cagr(fcf_series))}")
-
-    print("\nBALANCE SHEET")
-    de = (latest(debt) / latest(eq)) if (latest(debt) is not None and latest(eq)) else None
-    cr = (latest(ca) / latest(cl)) if (latest(ca) is not None and latest(cl)) else None
-    print(f"  Debt/Equity: {de:.2f}" if de is not None else "  Debt/Equity: n/a")
-    print(f"  Current ratio: {cr:.2f}" if cr is not None else "  Current ratio: n/a")
-    print(f"  Cash: {latest(cash)/1e9:.2f}B" if latest(cash) is not None else "  Cash: n/a")
-
-    # Raw XBRL share counts are NOT split-adjusted, so only compare a short
-    # recent window (splits are rare) and label it approximate.
-    recent_sh = sh[-4:] if len(sh) >= 4 else sh
-    dil = None
-    if len(recent_sh) >= 2 and recent_sh[0][1] and recent_sh[-1][1]:
-        dil = recent_sh[-1][1] / recent_sh[0][1] - 1
-        tag = "buyback (good)" if dil < -0.01 else ("dilution (watch)" if dil > 0.01 else "flat")
-        print(f"\n  Diluted shares {recent_sh[0][0]}->{recent_sh[-1][0]}: {dil*100:+.1f}% -> {tag}  (raw, not split-adjusted)")
-
-    # Valuation (needs current price)
-    print("\nVALUATION")
-    try:
-        import yfinance as yf
-        px = yf.Ticker(ticker).history(period="5d", auto_adjust=True)["Close"].dropna().iloc[-1]
-        shares_now = latest(sh)
-        if shares_now:
-            mktcap = px * shares_now
-            pe = mktcap / latest(ni) if latest(ni) and latest(ni) > 0 else None
-            pfcf = mktcap / fcf if fcf and fcf > 0 else None
-            fcf_yield = fcf / mktcap if fcf and mktcap else None
-            print(f"  Price ${px:.2f} | approx market cap {mktcap/1e9:.1f}B")
-            print(f"  P/E: {pe:.1f}" if pe else "  P/E: n/a (no positive earnings)")
-            print(f"  P/FCF: {pfcf:.1f}" if pfcf else "  P/FCF: n/a")
-            print(f"  FCF yield: {pct(fcf_yield)}")
-    except Exception as e:
-        print(f"  (price/valuation unavailable: {e})")
-
-    # Red flags
-    flags = []
-    if latest(ni) is not None and latest(ni) <= 0:
-        flags.append("unprofitable (negative net income)")
-    if fcf is not None and fcf <= 0:
-        flags.append("negative free cash flow")
-    if de is not None and de > 2:
-        flags.append(f"high leverage (D/E {de:.1f})")
-    if dil is not None and dil > 0.10:
-        flags.append("recent share dilution")
-    nm = margin(ni, rev)
-    if has_rev and nm is not None and nm < 0:
-        flags.append("negative net margin")
-    print("\nRED FLAGS: " + ("; ".join(flags) if flags else "none obvious from the numbers"))
-
-    url, filed = latest_10k(cik)
-    print(f"\nLATEST 10-K (read the narrative): {url}" if url else "\nLATEST 10-K: not found")
-    if filed:
-        print(f"  filed {filed}")
-
-    show_legend()
+def _archive(text, subfolder, label):
+    """Save a copy of the run to C:\\Users\\erik9\\CoworkOS\\<subfolder>\\."""
+    import datetime
+    base = os.path.join(r"C:\Users\erik9\CoworkOS", subfolder)
+    os.makedirs(base, exist_ok=True)
+    ts = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    path = os.path.join(base, f"{label}-{ts}.txt")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+    return path
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("usage: python fundamentals.py TICKER")
-        sys.exit(1)
-    main(sys.argv[1])
+    import io
+    import contextlib
+    _buf = io.StringIO()
+    with contextlib.redirect_stdout(_buf):
+        main(sys.argv[1:])
+    _text = _buf.getvalue()
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+    try:
+        print(_text, end="")
+    except UnicodeEncodeError:
+        sys.stdout.buffer.write(_text.encode("utf-8", "replace"))
+    try:
+        _label = "-".join(a.upper() for a in sys.argv[1:] if not a.startswith("--"))[:40] or "research"
+        _p = _archive(_text, "Research", _label)
+        print(f"\n[snapshot saved to {_p}]")
+    except Exception as _e:
+        print(f"\n[could not save archive: {_e}]")

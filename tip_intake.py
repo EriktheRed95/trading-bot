@@ -98,6 +98,45 @@ def verdict(close, t):
     }
 
 
+def quality(tickers):
+    """Quality and valuation from the financial-researcher skill.
+
+    Imported from the repo's synced copy of the skill so this stays reproducible
+    without depending on the active copy under ~/.claude/skills. Income-statement
+    and cash-flow numbers come from SEC filings; price multiples from yfinance.
+    """
+    skill = REPO / "skills" / "financial-researcher"
+    if not (skill / "fundamentals.py").exists():
+        return {}
+    sys.path.insert(0, str(skill))
+    try:
+        import fundamentals as F
+    except Exception as e:
+        print(f"  (quality read unavailable: {e})")
+        return {}
+    out = {}
+    for t in tickers:
+        try:
+            f = F.fundamentals(t)
+            if not f:
+                continue
+            label, score, flags = F.quality_verdict(f)
+            v, why = F.buffett_verdict(f, score)
+            out[t] = {
+                "label": label, "score": score, "flags": flags,
+                "verdict": v, "why": why,
+                "valuation": F.valuation_note(f),
+                "warnings": f.get("warnings", []),
+                "from_filings": bool(f.get("from_filings")),
+                "gm": f.get("gm"), "om": f.get("om"), "nm": f.get("nm"),
+                "fcf": f.get("fcf"), "rev_g": f.get("rev_g"),
+                "nonop_share": f.get("nonop_share"),
+            }
+        except Exception as e:
+            print(f"  ({t} quality read failed: {e})")
+    return out
+
+
 def regime(close):
     s = close[MARKET].dropna()
     on = bool(s.iloc[-1] > s.rolling(200).mean().iloc[-1])
@@ -125,6 +164,8 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--tickers', nargs='*', help='ad hoc tickers not yet in the ledger')
     ap.add_argument('--json', metavar='PATH')
+    ap.add_argument('--no-fundamentals', action='store_true',
+                    help='skip the SEC quality and valuation pass (faster)')
     args = ap.parse_args()
 
     ledger = load_ledger()
@@ -162,6 +203,34 @@ def main():
               f"{r['pct_vs_sma']:>9.0f}%{r['mom12']:>10.0f}%{r['vol']:>7.0f}%"
               f"{n:>10}  {', '.join(flags)}")
 
+    qual = {}
+    if not args.no_fundamentals:
+        print("\nPulling quality and valuation from SEC filings...")
+        qual = quality([r["ticker"] for r in rows if r.get("verdict") != "NO DATA"])
+        if qual:
+            print(f"\n{'ticker':<8}{'trend':<10}{'quality':<17}{'both?':<9}valuation")
+            print("-" * 96)
+            for r in rows:
+                q = qual.get(r["ticker"])
+                if not q:
+                    continue
+                # A 5/5 numeric score with an earnings-quality warning is NOT a
+                # clean pass. MRVL scores 5/5 while 41% of its net income is
+                # non-operating, which is exactly the case that should not read
+                # as "passes both".
+                if r["verdict"] == "ELIGIBLE" and q["label"] == "QUALITY":
+                    both = "FLAGGED" if q.get("warnings") else "YES"
+                else:
+                    both = "no"
+                print(f"{r['ticker']:<8}{r['verdict']:<10}"
+                      f"{q['label'] + ' ' + str(q['score']) + '/5':<17}{both:<9}"
+                      f"{q['valuation'][:48]}")
+            for t, q in qual.items():
+                for w in q.get("warnings", []):
+                    print(f"   !! {t}: {w}")
+            print("\nA high-conviction name passes BOTH screens. Trend answers when")
+            print("and how much risk; fundamentals answer what is worth owning.")
+
     elig = [r for r in rows if r["verdict"] == "ELIGIBLE"]
     avoid = [r for r in rows if r["verdict"] == "AVOID"]
     print(f"\n{len(elig)} of {len(rows)} tipped names pass his trend rules: "
@@ -196,7 +265,7 @@ def main():
             print(f"   {c['verdict']:<13} {c['claim'][:66]}")
 
     if args.json:
-        payload = {"regime": reg, "rows": rows,
+        payload = {"regime": reg, "rows": rows, "quality": qual,
                    "counts": dict(counts), "where": where,
                    "sources": ledger.get("sources", []),
                    "markers": ledger.get("promotional_markers", {})}
