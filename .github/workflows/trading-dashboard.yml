@@ -1,0 +1,193 @@
+name: Trading dashboard
+
+# Runs in GitHub's cloud, not on the laptop. That is the whole point. The Task
+# Scheduler job this replaces carried DisallowStartIfOnBatteries=True,
+# WakeToRun=False and RunOnlyIfNetworkAvailable=True, which are three
+# independent ways to skip silently on a laptop. So it produced a dashboard that
+# looked current and was not, on any day the machine was unplugged or asleep at
+# 6:45am, 1:00pm or 5:30pm. Silent staleness on a decision aid is worse than no
+# dashboard.
+#
+# PRIVACY GATE. Publishing to GitHub Pages from this PUBLIC repo is acceptable
+# only while the dashboard renders a MODEL portfolio built from public rules and
+# public price data, which is all this repo contains today. DRY_RUN is True at
+# main.py line 19 and nothing here has ever placed an order, so there are no
+# positions to leak. THE DAY IT RENDERS REAL HOLDINGS, REAL SIZING OR REAL
+# ACCOUNT VALUES, MOVE PAGES TO A PRIVATE REPO. Do not inherit this decision
+# without re-reading it.
+# Pages stays OFF until the repository variable PUBLISH_PAGES is set to 'true'.
+# Until then the build still runs and uploads a private workflow artifact.
+#
+# All times UTC. GitHub cron does not observe daylight saving, so these slots
+# drift an hour in winter. For a thrice-daily dashboard that is harmless, and
+# the page stamps its own build time and market as-of date, so the drift is
+# visible rather than hidden. Do not build machinery for it.
+#
+# TRAP WORTH KNOWING: GitHub disables scheduled workflows after 60 days with no
+# repository activity, quietly. This workflow deliberately does not commit
+# anything back, so the repo's own commit activity is the only thing keeping the
+# schedule alive. That is the exact failure mode this migration exists to
+# escape, hiding inside the tool being migrated to.
+
+on:
+  schedule:
+    - cron: '45 11 * * 1-5'   # 6:45am Central, before the open
+    - cron: '0 18 * * 1-5'    # 1:00pm Central
+    - cron: '30 22 * * 1-5'   # 5:30pm Central, after the close
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two runs race over the same Pages deployment.
+concurrency:
+  group: trading-dashboard
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      asof: ${{ steps.build.outputs.asof }}
+      regime: ${{ steps.build.outputs.regime }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Deliberately NOT requirements.txt. That file pulls schwab-py and the
+      # Google auth stack into a job that must never trade and holds no
+      # credentials. These four are the entire transitive dependency set of the
+      # build path, verified by running build_dashboard.py in a clean virtual
+      # environment containing only them. vaderSentiment is required because
+      # live_picks imports news_sentiment at module load, even though the
+      # sentiment tilt itself is switched off (it sits in the rejected tier).
+      - name: Install the build path only
+        run: pip install numpy pandas yfinance vaderSentiment
+
+      # Under `bash -e` a non-zero exit aborts the step before anything can be
+      # inspected, so the exit code is captured inline and acted on afterwards.
+      - name: Build the dashboard
+        id: build
+        run: |
+          set +e
+          python build_dashboard.py --out site 2>&1 | tee build.log
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "exit code: $code"
+          if [ "$code" -ne 0 ]; then
+            echo "::error::build_dashboard.py exited $code"
+            tail -40 build.log
+            exit "$code"
+          fi
+          if [ ! -s site/TRADING-DASHBOARD.html ]; then
+            echo "::error::no dashboard was written"
+            exit 1
+          fi
+          # Pages serves index.html; the script writes TRADING-DASHBOARD.html.
+          cp site/TRADING-DASHBOARD.html site/index.html
+          asof=$(grep -o 'Market data as of [0-9-]*' site/TRADING-DASHBOARD.md | head -1 | sed 's/Market data as of //')
+          regime=$(grep -o 'RISK ON\|RISK OFF' build.log | head -1)
+          echo "asof=${asof:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "regime=${regime:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "built for $asof, regime $regime"
+
+      # The safety lock is the one thing worth failing the build over. If
+      # DRY_RUN ever stops being True, the dashboard's central claim about
+      # itself is false and it should not be published saying otherwise.
+      - name: Assert the safety lock
+        run: |
+          if ! grep -qE '^DRY_RUN\s*=\s*True' main.py; then
+            echo "::error::DRY_RUN is not True in main.py. Refusing to publish a"
+            echo "::error::dashboard that claims to be read only."
+            exit 1
+          fi
+          echo "DRY_RUN = True confirmed"
+
+      # Always available, needs no Pages and no approval. This is the fallback
+      # if Pages is never enabled, though an artifact is not glanceable on a
+      # phone, which loses most of the point.
+      - name: Upload artifact copy
+        uses: actions/upload-artifact@v4
+        with:
+          name: trading-dashboard
+          path: site/
+          retention-days: 14
+
+      - name: Upload Pages artifact
+        if: vars.PUBLISH_PAGES == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/
+
+  deploy:
+    needs: build
+    if: vars.PUBLISH_PAGES == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  notify:
+    needs: [build, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      # TRADING_NOTIFY is a repository variable, so the volume changes without
+      # editing this file. 'failures' is the quiet default; 'always' also pings
+      # on success. Erik asked for done-pings, so it is set to 'always' for now.
+      #
+      # A failed notification must never fail the run: the dashboard mattering
+      # more than the alert about it is the same rule the fantasy bot follows.
+      # Hence the trailing || true.
+      - name: Push to phone
+        env:
+          TOPIC: ${{ secrets.NTFY_TOPIC_TRADING }}
+          MODE: ${{ vars.TRADING_NOTIFY || 'failures' }}
+          STATUS: ${{ needs.build.result }}
+          ASOF: ${{ needs.build.outputs.asof }}
+          REGIME: ${{ needs.build.outputs.regime }}
+          PAGES_URL: ${{ vars.DASHBOARD_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$TOPIC" ]; then
+            echo "NTFY_TOPIC_TRADING is not set, so there is nobody to notify. Skipping."
+            exit 0
+          fi
+          if [ "$STATUS" = "success" ] && [ "$MODE" != "always" ]; then
+            echo "Build succeeded and TRADING_NOTIFY is '$MODE', so staying quiet."
+            exit 0
+          fi
+          if [ "$STATUS" = "success" ]; then
+            title="Trading dashboard updated"
+            prio="default"
+            tags="chart_with_upwards_trend"
+            body="Market data as of ${ASOF}. Strategy C regime gate: ${REGIME}. Model portfolio only, nothing trades."
+          else
+            title="Trading dashboard FAILED"
+            prio="urgent"
+            tags="rotating_light"
+            body="The build did not complete (result: ${STATUS}). The dashboard on your phone is now stale. Open the run log to see why."
+          fi
+          link="${PAGES_URL:-$RUN_URL}"
+          label="Open dashboard"
+          if [ -z "$PAGES_URL" ] || [ "$STATUS" != "success" ]; then
+            link="$RUN_URL"
+            label="Open run log"
+          fi
+          curl -sS --max-time 20 \
+            -H "Title: ${title}" \
+            -H "Priority: ${prio}" \
+            -H "Tags: ${tags}" \
+            -H "Actions: view, ${label}, ${link}" \
+            -d "${body}" \
+            "https://ntfy.sh/${TOPIC}" || true
+          echo "notification attempted"
