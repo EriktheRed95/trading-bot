@@ -58,7 +58,19 @@
         "ROBO",
         "ARKQ"
       ],
-      "expression_note": "The named companies plus the sector exchange-traded funds the video never mentions, which are the obvious retail expression of a supply-chain thesis and therefore have to be checked rather than assumed."
+      "expression_note": "The named companies plus the sector exchange-traded funds the video never mentions, which are the obvious retail expression of a supply-chain thesis and therefore have to be checked rather than assumed.",
+      "fund_check": {
+        "as_of": "2026-09-04",
+        "source": "Global X issuer file, botz_full-holdings_20260904.csv, 66 holdings summing to 100.04%",
+        "headline": "BOTZ holds NONE of the three named bottleneck companies.",
+        "detail": [
+          "Harmonic Drive: NOT HELD. Sanhua: NOT HELD. MP Materials: NOT HELD.",
+          "Layer split by my classification, which is a judgement call and open to argument: about 53% sits in body and component names, about 27% in the brain and robot-maker layer the thesis says to avoid, and about 20% is neither.",
+          "The 53% overstates alignment with the HUMANOID bottleneck. Keyence, ABB, Fanuc, SMC, Daifuku, Omron and Yaskawa are factory-automation incumbents, which is a different business from humanoid actuators and reducers. The fund gives industrial automation, not the constrained layer the argument identifies.",
+          "NVIDIA is the second largest holding at 10.11%, so the single biggest single-name bet inside a supply-chain fund is the brain layer the thesis argues against.",
+          "ARKQ and ROBO were NOT confirmed from issuer files: the ARK and ROBO Global holdings endpoints did not resolve at the URLs tried, so those two rest on a free-feed top-ten only and their full books remain unverified."
+        ]
+      }
     },
     {
       "id": "ig-DawQhJSpTmm",
@@ -146,7 +158,7 @@
     },
     "FIW": {
       "ticker": "FIW",
-      "dollar_vol": 4159842.3427581787,
+      "dollar_vol": 4159842.037963867,
       "spread": 0.024340770791075054,
       "stale_frac": 0.0,
       "n_obs": 502,
@@ -168,12 +180,12 @@
       "stale_frac": 0.3592814371257485,
       "n_obs": 502,
       "exchange": "PNK",
-      "home_corr": 0.28160509501824293,
+      "home_corr": 0.28160502718689545,
       "home": "6324.T",
       "is_etf": false,
       "spread_measurable": false,
       "mom_self": 6.952092670644275,
-      "mom_home": 1.7550897191296158,
+      "mom_home": 1.7550894592202235,
       "fails": [
         "thin: $0.01M median daily volume, under the $1M floor",
         "stale: 36% of sessions print zero change",
@@ -201,7 +213,7 @@
     },
     "PHO": {
       "ticker": "PHO",
-      "dollar_vol": 3830643.897628784,
+      "dollar_vol": 3830643.678665161,
       "spread": 0.06553115808194804,
       "stale_frac": 0.003992015968063872,
       "n_obs": 502,
