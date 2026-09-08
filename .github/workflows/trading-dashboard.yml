@@ -38,11 +38,19 @@ name: Trading dashboard
 # schedule alive. That is the exact failure mode this migration exists to
 # escape, hiding inside the tool being migrated to.
 
+# SCHEDULED RUNS ARE NOT PUNCTUAL, and this is measured rather than quoted. The
+# 22:30Z slot on 2026-09-07 did not start until 00:36Z, a queue delay of 2 hours
+# 6 minutes, against the 5 to 20 minutes usually cited. So treat every time below
+# as "no earlier than", never "at". Nothing here may assume a run lands near its
+# stated time: the 11:45Z slot is nominally before the US open but can plausibly
+# land after it, and on that morning it would have. The page stamps its own build
+# time and market as-of date, so a late run is visible rather than silently
+# passed off as current, which is the property that makes the drift tolerable.
 on:
   schedule:
-    - cron: '45 11 * * 1-5'   # 6:45am Central, before the open
-    - cron: '0 18 * * 1-5'    # 1:00pm Central
-    - cron: '30 22 * * 1-5'   # 5:30pm Central, after the close
+    - cron: '45 11 * * 1-5'   # nominally 6:45am Central, may land after the open
+    - cron: '0 18 * * 1-5'    # nominally 1:00pm Central
+    - cron: '30 22 * * 1-5'   # nominally 5:30pm Central, after the close
   workflow_dispatch:
 
 permissions:
@@ -142,6 +150,13 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       page_url: ${{ steps.url.outputs.page_url }}
+      # Whether anything was ACTUALLY published this run. A job result of
+      # 'success' does not mean that: the job succeeds when it correctly skips
+      # on a missing credential. Without this, the phone push claims the
+      # dashboard was updated on a run that published nothing, which is the
+      # silent-staleness failure this whole migration exists to prevent, wearing
+      # a different costume.
+      published: ${{ steps.url.outputs.published }}
     steps:
       - name: Check for the Cloudflare credential
         id: gate
@@ -183,10 +198,14 @@ jobs:
 
       # The per-deployment URL changes every run; the project alias does not, so
       # that is what belongs in a phone notification.
+      # Only reached when the deploy above actually succeeded, so this is the one
+      # place entitled to say something was published.
       - name: Resolve the stable URL
         id: url
         if: steps.gate.outputs.ready == 'true'
-        run: echo "page_url=https://trading-dashboard.pages.dev" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "page_url=https://trading-dashboard.pages.dev" >> "$GITHUB_OUTPUT"
+          echo "published=true" >> "$GITHUB_OUTPUT"
 
   notify:
     needs: [build, deploy]
@@ -206,9 +225,15 @@ jobs:
           MODE: ${{ vars.TRADING_NOTIFY || 'failures' }}
           BUILD: ${{ needs.build.result }}
           DEPLOY: ${{ needs.deploy.result }}
+          PUBLISHED: ${{ needs.deploy.outputs.published }}
           ASOF: ${{ needs.build.outputs.asof }}
           REGIME: ${{ needs.build.outputs.regime }}
-          PAGES_URL: ${{ needs.deploy.outputs.page_url || vars.DASHBOARD_URL }}
+          # Only the deploy job's own output is trusted. A hand-set
+          # DASHBOARD_URL variable is deliberately NOT used as a fallback: one
+          # was previously left pointing at a site that had been taken down, so
+          # the push offered an "Open dashboard" button that returned 404. A
+          # link is only worth sending when this run actually published it.
+          PAGES_URL: ${{ needs.deploy.outputs.page_url }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           if [ -z "$TOPIC" ]; then
@@ -229,11 +254,18 @@ jobs:
             exit 0
           fi
 
-          if [ "$ok" = "true" ]; then
+          if [ "$ok" = "true" ] && [ "$PUBLISHED" = "true" ]; then
             title="Trading dashboard updated"
             prio="default"
             tags="chart_with_upwards_trend"
             body="Market data as of ${ASOF}. Strategy C regime gate: ${REGIME}. Model portfolio only, nothing trades."
+          elif [ "$ok" = "true" ]; then
+            # Built fine, published nothing. Saying "updated" here would be a
+            # lie about the only thing the reader cares about.
+            title="Trading dashboard built, NOT published"
+            prio="default"
+            tags="package"
+            body="Fresh build for ${ASOF} (regime ${REGIME}), but nothing was published: hosting is not configured yet, so there is no live page to open. The build is attached to the run as an artifact."
           else
             title="Trading dashboard FAILED"
             prio="urgent"
@@ -243,11 +275,12 @@ jobs:
             body="build=${BUILD} deploy=${DEPLOY}. The last good dashboard is still there, so the page is STALE rather than broken. Do not read it as current."
           fi
 
-          link="$PAGES_URL"
-          label="Open dashboard"
-          if [ -z "$PAGES_URL" ] || [ "$ok" != "true" ]; then
-            link="$RUN_URL"
-            label="Open run log"
+          # Never offer an "Open dashboard" button unless THIS run published one.
+          link="$RUN_URL"
+          label="Open run log"
+          if [ "$ok" = "true" ] && [ "$PUBLISHED" = "true" ] && [ -n "$PAGES_URL" ]; then
+            link="$PAGES_URL"
+            label="Open dashboard"
           fi
           curl -sS --max-time 20 \
             -H "Title: ${title}" \
