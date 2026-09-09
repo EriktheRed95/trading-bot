@@ -38,7 +38,13 @@ import yfinance as yf
 warnings.filterwarnings('ignore')
 
 REPO = Path(__file__).resolve().parent
-DEFAULT_OUT = Path.home() / "Documents" / "CoworkOS" / "Trading Dashboard"
+# The canonical output tree is the LIVE Cowork workspace, C:\Users\erik9\CoworkOS.
+# Not Documents\CoworkOS. The distinction is not cosmetic: Cowork, the separate
+# app, reads this tree and cannot see anything written elsewhere, so output in
+# the wrong place is invisible to it. Three CoworkOS trees exist on this machine
+# and have diverged, which is exactly why this is pinned rather than guessed.
+# The GitHub Actions build passes --out and never uses this default.
+DEFAULT_OUT = Path.home() / "CoworkOS" / "Trading Dashboard"
 
 # Macro panel definitions. The video that suggested this panel defined no
 # thresholds at all, so these are OUR choices and the dashboard says so.
