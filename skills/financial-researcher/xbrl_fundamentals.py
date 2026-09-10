@@ -57,15 +57,36 @@ def _days(a, b):
     return (date.fromisoformat(b) - date.fromisoformat(a)).days
 
 
-def _periods(facts, names):
+# Foreign private issuers filing a 20-F report under IFRS, so their facts live in
+# the `ifrs-full` taxonomy and NONE of the us-gaap tags above exist. SK Telecom is
+# the worked example: the us-gaap lookup returned nothing, the caller silently
+# fell back to a data vendor, and the report still said "[SEC filings]". A wrong
+# number is bad; a wrong number wearing a filings label is worse.
+IFRS = {
+    "revenue": ["Revenue", "RevenueFromContractsWithCustomers"],
+    "gross_profit": ["GrossProfit"],
+    "operating_income": ["ProfitLossFromOperatingActivities"],
+    "net_income": ["ProfitLoss"],
+    "nonoperating": [],
+    "ocf": ["CashFlowsFromUsedInOperatingActivities"],
+    "capex": ["PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities"],
+    "equity": ["Equity", "EquityAttributableToOwnersOfParent"],
+}
+
+
+def _periods(facts, names, taxonomy="us-gaap"):
     """Deduplicated duration facts for the first tag that has any data."""
     for tag in names:
-        node = facts.get("facts", {}).get("us-gaap", {}).get(tag)
+        node = facts.get("facts", {}).get(taxonomy, {}).get(tag)
         if not node:
             continue
         rows = {}
+        # Report the unit rather than assuming dollars. A KRW figure read as USD
+        # leaves RATIOS looking correct, because currency cancels in a margin,
+        # while anything mixing a filing figure with a market price explodes.
+        # That is why SK Telecom showed sane margins beside a 6,607% cash yield.
         for unit, items in node.get("units", {}).items():
-            if unit != "USD":
+            if not unit.isalpha() or len(unit) != 3:
                 continue
             for it in items:
                 if not it.get("start") or not it.get("end"):
@@ -78,9 +99,10 @@ def _periods(facts, names):
                     rows[key] = {"start": it["start"], "end": it["end"],
                                  "val": it["val"], "form": it.get("form", ""),
                                  "days": _days(it["start"], it["end"])}
-        if rows:
-            return sorted(rows.values(), key=lambda p: (p["end"], p["days"])), tag
-    return [], None
+            if rows:
+                return (sorted(rows.values(), key=lambda p: (p["end"], p["days"])),
+                        tag, unit)
+    return [], None, None
 
 
 def _chain(quarters, end, n=4):
@@ -163,15 +185,24 @@ def pull(ticker):
         return None
     facts = r.json()
 
-    out = {"cik": cik, "source": {}, "warnings": []}
+    out = {"cik": cik, "source": {}, "warnings": [], "currency": None,
+           "taxonomy": None, "usable": False}
     series = {}
     for key, names in TAGS.items():
-        ps, tag = _periods(facts, names)
+        ps, tag, unit, tax = [], None, None, None
+        for taxonomy, table in (("us-gaap", TAGS), ("ifrs-full", IFRS)):
+            ps, tag, unit = _periods(facts, table.get(key, []), taxonomy)
+            if ps:
+                tax = taxonomy
+                break
         series[key] = ps
+        if unit and out["currency"] is None:
+            out["currency"], out["taxonomy"] = unit, tax
         val, how, end = ttm(ps)
         out[key] = val
         if val is not None:
-            out["source"][key] = f"{tag}, {how}, through {end}"
+            out["usable"] = True
+            out["source"][key] = f"{tax}:{tag} ({unit}), {how}, through {end}"
 
     # prior-year TTM for an honest growth rate (not a single volatile quarter)
     rev_end = None

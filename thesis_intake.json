@@ -102,32 +102,136 @@
         "CGW"
       ],
       "expression_note": "Downgrade the thesis, do not discard the instruments. Water scarcity is a genuine long-horizon theme and these are ordinary, liquid exchange-traded funds. What does not survive is the specific artificial-intelligence urgency, which rested on the retracted figure."
+    },
+    {
+      "id": "ig-DdG-TdOKaWb",
+      "platform": "instagram",
+      "url": "https://www.instagram.com/reel/DdG-TdOKaWb/",
+      "title": "Pre-IPO proxy exposure to Anthropic and SpaceX",
+      "creator": "Michael Sikand (sikandinvests)",
+      "triaged": "2026-09-10",
+      "structural_claim": "Anthropic and SpaceX are heading for enormous initial public offerings. You cannot buy either directly, so the trade is to own listed companies that already have contractual revenue from them or hold equity in them, and be positioned before the listing repricing.",
+      "what_must_be_true": [
+        "The initial public offerings actually happen, and on a horizon worth waiting for",
+        "The proxy link is material to the proxy company, not a rounding error on its revenue",
+        "The market has not already priced the link, which is the weak point since every deal here was announced months ago and moved the stock on the day",
+        "The proxy company's own business does not swamp the exposure you are buying"
+      ],
+      "load_bearing_claim": {
+        "claim": "Three listed companies have real, large Anthropic exposure",
+        "verdict": "ALL THREE VERIFIED, which is a first for this batch",
+        "checked_against": "Bloomberg, Reuters, Data Center Dynamics, company reporting",
+        "note": "Riot Platforms: VERIFIED and LARGER than the video said. A real 9.1 billion dollar, 191 megawatt, 20-year lease at the Rockdale Texas campus running through June 2048, announced August 2026, worth up to 16.1 billion with two five-year extensions. Akamai: VERIFIED. A 1.8 billion dollar seven-year cloud deal announced 8 May 2026, the largest in Akamai's history; revenue starts in the fourth quarter of 2026 at about 20 to 25 million dollars. SK Telecom: VERIFIED in substance. It invested about 270 billion won since 2023 and the stake was carried above 3.5 trillion won, roughly 2.5 billion dollars, at the end of June, and it joined the 65 billion dollar Series H at a 965 billion post-money valuation. The 2 trillion dollar initial public offering figure is a QUESTION, not a fact: the video's own source graphic carries a question mark, and the last marked round was 965 billion."
+      },
+      "named_companies": [
+        {
+          "name": "Riot Platforms (RIOT)",
+          "role": "data-centre landlord to Anthropic",
+          "claim": "Anthropic contract; market capitalisation only 8 billion",
+          "verdict": "VERIFIED, and the deal is bigger than stated",
+          "us_access": "NASDAQ, ordinary access.",
+          "tradeable_us": true
+        },
+        {
+          "name": "Akamai Technologies (AKAM)",
+          "role": "cloud and security supplier",
+          "claim": "1.8 billion dollar Anthropic deal; trading at just 15 times",
+          "verdict": "DEAL VERIFIED. The multiple is the forward one (14.9x); trailing price to earnings is 38.8x, so quoting 15 flatters it",
+          "us_access": "NASDAQ, ordinary access.",
+          "tradeable_us": true
+        },
+        {
+          "name": "SK Telecom (SKM)",
+          "role": "holds Anthropic EQUITY, not a contract",
+          "claim": "the closest thing to a pure play equity on Anthropic",
+          "verdict": "DEFENSIBLE ON THE NUMBERS, wrong on the words",
+          "us_access": "NYSE American Depositary Receipt, ordinary access.",
+          "tradeable_us": true
+        }
+      ],
+      "markers": [
+        "no_position_disclosure",
+        "no_methodology"
+      ],
+      "marker_note": "Notably better sourced than the earlier batch: every factual claim it makes checks out against real reporting, and it names its source graphics. It still ends on a subscription promotion for the creator's own portfolio product and discloses no position, and it gives no entry, exit or sizing.",
+      "expressions": [
+        "RIOT",
+        "AKAM",
+        "SKM",
+        "AMZN",
+        "GOOGL"
+      ],
+      "expression_note": "The three the video names, plus the two it SHOWS AND THEN IGNORES. Its own ownership pie chart puts Amazon at 17 percent and Google at 14 percent, far larger holders than SK Telecom, and it picks neither.",
+      "fund_check": {
+        "as_of": "2026-09-10",
+        "source": "Anthropic marked at 965 billion post-money (Series H); market capitalisations live from yfinance",
+        "headline": "How much Anthropic you actually get per dollar, which is the comparison the video skips.",
+        "detail": [
+          "SK Telecom: about 14 billion market capitalisation against an implied 3 billion stake, so roughly 20 percent of the company is the Anthropic position. Amazon: 6.0 percent. Alphabet: 3.3 percent.",
+          "So 'closest thing to a pure play' is DEFENSIBLE on the ratio that matters, even though 'pure play' is the wrong phrase for a Korean telecom whose main business is mobile service. Call it the most concentrated liquid exposure, not a pure play.",
+          "The Amazon and Alphabet percentages are CONTENT-SOURCED from the video's pie chart and are not independently verified. SK Telecom's is verified from reporting.",
+          "Dilution is the live risk on the SK Telecom line: the stake went from about 2 percent at entry to about 0.3 percent after later rounds. Each new raise marks the value up and the ownership down, so the exposure erodes even as the headline number grows.",
+          "The market-priced-it objection is the strongest one against the whole thesis. Every deal here was announced months ago and moved the stock hard on the day: Akamai closed up 27 percent at 148.38 dollars on its announcement and trades near 107 now, roughly 28 percent below that post-deal level. The video shows a five-day green chart and omits that."
+        ]
+      }
     }
   ],
   "tradability": {
+    "AKAM": {
+      "ticker": "AKAM",
+      "dollar_vol": 213248500.0,
+      "spread": 0.09827719441792811,
+      "stale_frac": 0.002,
+      "n_obs": 501,
+      "exchange": "NMS",
+      "home_corr": null,
+      "home": null,
+      "is_etf": false,
+      "spread_measurable": false,
+      "fails": [],
+      "notes": [
+        "9.83% quoted spread NOT COUNTED: the feed failed its own canary, so this number is not real"
+      ],
+      "status": "TRADEABLE"
+    },
+    "AMZN": {
+      "ticker": "AMZN",
+      "dollar_vol": 8913446254.99115,
+      "spread": 0.10087596496140154,
+      "stale_frac": 0.0,
+      "n_obs": 501,
+      "exchange": "NMS",
+      "home_corr": null,
+      "home": null,
+      "is_etf": false,
+      "spread_measurable": false,
+      "fails": [],
+      "notes": [
+        "10.09% quoted spread NOT COUNTED: the feed failed its own canary, so this number is not real"
+      ],
+      "status": "TRADEABLE"
+    },
     "ARKQ": {
       "ticker": "ARKQ",
-      "dollar_vol": 14857187.96081543,
-      "spread": 0.025262641540285357,
-      "stale_frac": 0.005988023952095809,
-      "n_obs": 502,
+      "dollar_vol": 14964666.854858398,
+      "spread": 0.0008293249295073338,
+      "stale_frac": 0.006,
+      "n_obs": 501,
       "exchange": "BTS",
       "home_corr": null,
       "home": null,
       "is_etf": true,
       "spread_measurable": false,
       "fails": [],
-      "notes": [
-        "2.53% quoted spread NOT COUNTED: the feed failed its own canary, so this number is not real"
-      ],
+      "notes": [],
       "status": "TRADEABLE"
     },
     "BOTZ": {
       "ticker": "BOTZ",
-      "dollar_vol": 21570769.59476471,
+      "dollar_vol": 21725725.42076111,
       "spread": 0.014606293984862491,
-      "stale_frac": 0.00998003992015968,
-      "n_obs": 502,
+      "stale_frac": 0.01,
+      "n_obs": 501,
       "exchange": "NGM",
       "home_corr": null,
       "home": null,
@@ -141,10 +245,10 @@
     },
     "CGW": {
       "ticker": "CGW",
-      "dollar_vol": 1642310.5669021606,
-      "spread": 0.1006768847739827,
-      "stale_frac": 0.007984031936127744,
-      "n_obs": 502,
+      "dollar_vol": 1640864.3035888672,
+      "spread": 0.11391606184916366,
+      "stale_frac": 0.008,
+      "n_obs": 501,
       "exchange": "PCX",
       "home_corr": null,
       "home": null,
@@ -152,16 +256,16 @@
       "spread_measurable": false,
       "fails": [],
       "notes": [
-        "10.07% quoted spread NOT COUNTED: the feed failed its own canary, so this number is not real"
+        "11.39% quoted spread NOT COUNTED: the feed failed its own canary, so this number is not real"
       ],
       "status": "TRADEABLE"
     },
     "FIW": {
       "ticker": "FIW",
-      "dollar_vol": 4159842.037963867,
-      "spread": 0.024340770791075054,
+      "dollar_vol": 4160178.300476074,
+      "spread": 0.009115077857956644,
       "stale_frac": 0.0,
-      "n_obs": 502,
+      "n_obs": 501,
       "exchange": "PCX",
       "home_corr": null,
       "home": null,
@@ -169,39 +273,56 @@
       "spread_measurable": false,
       "fails": [],
       "notes": [
-        "2.43% quoted spread NOT COUNTED: the feed failed its own canary, so this number is not real"
+        "0.91% quoted spread NOT COUNTED: the feed failed its own canary, so this number is not real"
+      ],
+      "status": "TRADEABLE"
+    },
+    "GOOGL": {
+      "ticker": "GOOGL",
+      "dollar_vol": 7336074786.099243,
+      "spread": 0.014962292609351543,
+      "stale_frac": 0.002,
+      "n_obs": 501,
+      "exchange": "NMS",
+      "home_corr": null,
+      "home": null,
+      "is_etf": false,
+      "spread_measurable": false,
+      "fails": [],
+      "notes": [
+        "1.50% quoted spread NOT COUNTED: the feed failed its own canary, so this number is not real"
       ],
       "status": "TRADEABLE"
     },
     "HSYDF": {
       "ticker": "HSYDF",
-      "dollar_vol": 7068.837446212769,
-      "spread": 0.01800349321510129,
-      "stale_frac": 0.3592814371257485,
-      "n_obs": 502,
+      "dollar_vol": 7282.16192817688,
+      "spread": 0.009490829806335886,
+      "stale_frac": 0.354,
+      "n_obs": 501,
       "exchange": "PNK",
-      "home_corr": 0.28160502718689545,
+      "home_corr": 0.28163760806551297,
       "home": "6324.T",
       "is_etf": false,
       "spread_measurable": false,
-      "mom_self": 6.952092670644275,
-      "mom_home": 1.7550894592202235,
+      "mom_self": 6.19712517176231,
+      "mom_home": 1.4883007321931974,
       "fails": [
         "thin: $0.01M median daily volume, under the $1M floor",
-        "stale: 36% of sessions print zero change",
+        "stale: 35% of sessions print zero change",
         "not tracking: 0.28 daily correlation with its own 6324.T listing"
       ],
       "notes": [
-        "1.80% quoted spread NOT COUNTED: the feed failed its own canary, so this number is not real"
+        "0.95% quoted spread NOT COUNTED: the feed failed its own canary, so this number is not real"
       ],
       "status": "NOT TRADEABLE AT SIZE"
     },
     "MP": {
       "ticker": "MP",
-      "dollar_vol": 282869778.9502144,
-      "spread": 0.0007342143906020401,
-      "stale_frac": 0.003992015968063872,
-      "n_obs": 502,
+      "dollar_vol": 285960650.0,
+      "spread": 0.0011652748106428874,
+      "stale_frac": 0.004,
+      "n_obs": 501,
       "exchange": "NYQ",
       "home_corr": null,
       "home": null,
@@ -213,10 +334,10 @@
     },
     "PHO": {
       "ticker": "PHO",
-      "dollar_vol": 3830643.678665161,
+      "dollar_vol": 3836149.661254883,
       "spread": 0.06553115808194804,
-      "stale_frac": 0.003992015968063872,
-      "n_obs": 502,
+      "stale_frac": 0.004,
+      "n_obs": 501,
       "exchange": "NGM",
       "home_corr": null,
       "home": null,
@@ -228,12 +349,29 @@
       ],
       "status": "TRADEABLE"
     },
+    "RIOT": {
+      "ticker": "RIOT",
+      "dollar_vol": 324226458.2312584,
+      "spread": 0.08888888888888889,
+      "stale_frac": 0.01,
+      "n_obs": 501,
+      "exchange": "NCM",
+      "home_corr": null,
+      "home": null,
+      "is_etf": false,
+      "spread_measurable": false,
+      "fails": [],
+      "notes": [
+        "8.89% quoted spread NOT COUNTED: the feed failed its own canary, so this number is not real"
+      ],
+      "status": "TRADEABLE"
+    },
     "ROBO": {
       "ticker": "ROBO",
-      "dollar_vol": 5213905.18913269,
-      "spread": 0.035278154681139755,
-      "stale_frac": 0.001996007984031936,
-      "n_obs": 502,
+      "dollar_vol": 5318831.872558594,
+      "spread": 0.05435190983093287,
+      "stale_frac": 0.002,
+      "n_obs": 501,
       "exchange": "PCX",
       "home_corr": null,
       "home": null,
@@ -241,19 +379,39 @@
       "spread_measurable": false,
       "fails": [],
       "notes": [
-        "3.53% quoted spread NOT COUNTED: the feed failed its own canary, so this number is not real"
+        "5.44% quoted spread NOT COUNTED: the feed failed its own canary, so this number is not real"
       ],
+      "status": "TRADEABLE"
+    },
+    "SKM": {
+      "ticker": "SKM",
+      "dollar_vol": 10604231.855010986,
+      "spread": 0.0008089524066334404,
+      "stale_frac": 0.006,
+      "n_obs": 501,
+      "exchange": "NYQ",
+      "home_corr": null,
+      "home": null,
+      "is_etf": false,
+      "spread_measurable": false,
+      "fails": [],
+      "notes": [],
       "status": "TRADEABLE"
     }
   },
   "pass": [
+    "AKAM",
+    "AMZN",
     "ARKQ",
     "BOTZ",
     "CGW",
     "FIW",
+    "GOOGL",
     "MP",
     "PHO",
-    "ROBO"
+    "RIOT",
+    "ROBO",
+    "SKM"
   ],
   "fail": [
     "HSYDF"

@@ -93,17 +93,47 @@ def fundamentals(t):
     except Exception as e:
         x = None
         out["warnings"].append(f"filing pull failed, falling back to yfinance: {e}")
-    if x:
+    # Only claim filings provenance if the filings actually yielded something.
+    # SK Telecom files under IFRS, so the us-gaap lookup returned an empty dict
+    # that still read as truthy here, and the report said "[SEC filings]" over
+    # numbers that had come from a data vendor.
+    if x and x.get("usable"):
         out["from_filings"] = True
         out["sources"] = x.get("source", {})
         out["warnings"] += x.get("warnings", [])
         out["nonop_share"] = x.get("nonop_share")
-        for src, dst in (("gross_margin", "gm"), ("operating_margin", "om"),
-                         ("net_margin", "nm"), ("fcf", "fcf"),
-                         ("rev_growth_ttm", "rev_g"), ("roe", "roe"),
-                         ("revenue", "rev")):
+        cur = x.get("currency") or "USD"
+        out["currency"] = cur
+
+        fields = [("gross_margin", "gm"), ("operating_margin", "om"),
+                  ("net_margin", "nm"), ("rev_growth_ttm", "rev_g")]
+        if cur == "USD":
+            # Absolute figures are only comparable to a USD market price when
+            # the filer actually reports in dollars. Margins and growth are
+            # ratios, so currency cancels and they are safe either way. That
+            # asymmetry is why SK Telecom showed believable margins beside a
+            # 6,607% cash yield: the ratios were fine, the mixed figure was not.
+            fields += [("fcf", "fcf"), ("roe", "roe"), ("revenue", "rev")]
+        else:
+            # The vendor's own figures for this filer are in the local currency
+            # too, so leaving them on screen prints a known-wrong number beside
+            # a USD price. Suppress rather than display: SK Telecom was showing
+            # free cash flow of $939.75B and a 6,607% yield, both nonsense.
+            out["fcf"] = None
+            out["rev"] = None
+            out["warnings"].append(
+                f"reports in {cur}, not USD. Margins and growth are ratios so "
+                f"they hold, but cash-flow and revenue figures are SUPPRESSED "
+                f"rather than shown, because mixing them with a USD market "
+                f"price produces nonsense. Convert from the filing if needed.")
+        for src, dst in fields:
             if x.get(src) is not None:
                 out[dst] = x[src]
+    elif x is not None:
+        out["warnings"].append(
+            "no usable XBRL facts found (likely a foreign private issuer whose "
+            "tags this tool does not cover), so the numbers below are vendor "
+            "data, NOT filings")
     return out
 
 
