@@ -38,17 +38,24 @@ name: Trading dashboard
 # schedule alive. That is the exact failure mode this migration exists to
 # escape, hiding inside the tool being migrated to.
 
-# SCHEDULED RUNS ARE NOT PUNCTUAL, and this is measured rather than quoted. The
-# 22:30Z slot on 2026-09-07 did not start until 00:36Z, a queue delay of 2 hours
-# 6 minutes, against the 5 to 20 minutes usually cited. So treat every time below
-# as "no earlier than", never "at". Nothing here may assume a run lands near its
-# stated time: the 11:45Z slot is nominally before the US open but can plausibly
-# land after it, and on that morning it would have. The page stamps its own build
-# time and market as-of date, so a late run is visible rather than silently
-# passed off as current, which is the property that makes the drift tolerable.
+# SCHEDULED RUNS ARE NOT PUNCTUAL, and these are measured, not quoted. Across
+# every scheduled run through 2026-09-10 the queue delay was 1.9 to 3.5 hours,
+# median 2.3, against the 5 to 20 minutes usually cited. Treat every time below
+# as "no earlier than", never "at".
+#
+# That measurement already broke one slot. The morning cron was 11:45Z, nominally
+# 6:45am Central and meant to be pre-open. It actually ran at 15:16Z and 15:17Z,
+# against a 14:30Z open, so it NEVER ONCE ran before the open. It is now 09:30Z,
+# chosen so that even the worst delay observed (3.5h) still lands about an hour
+# before the open rather than after it. If the delay distribution worsens, move
+# it earlier again; do not assume the nominal time.
+#
+# The page stamps its own build time and market as-of date, so a late run is
+# visible rather than silently passed off as current. That property is what makes
+# the remaining drift tolerable, and it is why no machinery is built for it.
 on:
   schedule:
-    - cron: '45 11 * * 1-5'   # nominally 6:45am Central, may land after the open
+    - cron: '30 9 * * 1-5'    # early enough that a 3.5h delay still beats the open
     - cron: '0 18 * * 1-5'    # nominally 1:00pm Central
     - cron: '30 22 * * 1-5'   # nominally 5:30pm Central, after the close
   workflow_dispatch:
