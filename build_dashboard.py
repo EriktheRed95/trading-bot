@@ -644,10 +644,17 @@ def build_panels(live, macro, on_res, port=None, tips=None, theses=None):
 
     if theses:
         for th in theses.get('theses', []):
+            # A thesis that has actually been TESTED does not belong in the
+            # untested tier. Filing a rejected result under "no evidence yet"
+            # would invite someone to rebuild the thing that was just killed.
+            tested = bool(th.get('tested'))
             panels.append(dict(
-                tier=3, title=f"Thesis: {th['title']}",
-                subtitle="A structural argument, which beats a tip and is still "
-                         "not a backtest.",
+                tier=2 if tested else 3,
+                title=("Tested: " if tested else "Thesis: ") + th['title'],
+                subtitle=("Backtested here against the incumbent gate."
+                          if tested else
+                          "A structural argument, which beats a tip and is "
+                          "still not a backtest."),
                 thesis=th,
                 body=[th['structural_claim']],
                 source=f"thesis_intake.py, content_theses.json. Source: "

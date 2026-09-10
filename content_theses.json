@@ -175,6 +175,49 @@
           "The market-priced-it objection is the strongest one against the whole thesis. Every deal here was announced months ago and moved the stock hard on the day: Akamai closed up 27 percent at 148.38 dollars on its announcement and trades near 107 now, roughly 28 percent below that post-deal level. The video shows a five-day green chart and omits that."
         ]
       }
+    },
+    {
+      "id": "ig-DcG_kQnD6DH",
+      "platform": "instagram",
+      "url": "https://www.instagram.com/reel/DcG_kQnD6DH/",
+      "title": "Breadth ratio: equal-weight over cap-weight S&P as a regime signal",
+      "triaged": "2026-09-10",
+      "tested": true,
+      "structural_claim": "The equal-weight S&P 500 divided by the cap-weighted S&P 500 (RSP over SPY) is called 'the equity market's real golden ratio'. Rising means breadth is broadening and more names are participating; falling means the market is narrowing into a few megacaps. The chart shown is RSP/SPY daily with 50-day and 200-day simple moving averages and a 14-day relative strength index, annotated 'Dominant broadening' at troughs and 'Countercycle narrowing' at peaks.",
+      "what_must_be_true": [
+        "The breadth state has to FORECAST something, not merely describe concentration that already happened",
+        "It has to beat, or add to, the SPY 200-day gate Strategy C already uses, since that is the incumbent it would replace",
+        "The edge must survive at more than one parameter value, or it is a fitted artifact"
+      ],
+      "load_bearing_claim": {
+        "claim": "The ratio is a usable regime signal, not just a description",
+        "verdict": "TESTED HERE AND LARGELY REJECTED",
+        "checked_against": "breadth_gate.py, RSP and SPY daily 2003-2026, 5,878 sessions",
+        "note": "MECHANIZABLE, which is why it was worth testing at all: two liquid funds, a ratio and a moving average, every term defined. Unlike the session-sweep video there was something to falsify. Breadth is also a genuine professional measure, not an invention. It still did not hold up. As a FORECAST it is null: the spread in forward SPY returns between broadening and narrowing is -0.28%, -0.36% and -1.43% at one, three and twelve months on the 200-day version, all NEGATIVE and all tiny, across 161 independent regime episodes. As a GATE it is beaten by the incumbent: Strategy C's SPY-200-day gate returns 7.9% at Sharpe 0.72 with a -21% drawdown, while the breadth gate manages 6.6% at 0.64 with -24% and sits out half the time. Combining them with AND is worse still at 4.7%."
+      },
+      "named_companies": [],
+      "markers": [
+        "no_position_disclosure",
+        "no_methodology"
+      ],
+      "marker_note": "Opens with 'I'm reluctant to even share', which is a scarcity frame rather than evidence. No entry, exit or sizing. IMPORTANT READ LIMITATION: the reel had no captions and no Whisper key was configured, so it was read from frames alone and the caption fragments are incomplete. The phrase 'the first rule to use it' is visible but the rule that follows was not captured, so what was tested is the NATURAL reading of the indicator, not necessarily the creator's exact rule.",
+      "expressions": [
+        "RSP",
+        "SPY"
+      ],
+      "expression_note": "Not a stock tip. The two instruments are the indicator itself, and both are large liquid exchange-traded funds with ordinary access.",
+      "fund_check": {
+        "as_of": "2026-09-10",
+        "source": "breadth_gate.py, RSP and SPY 2003-05-01 to 2026-09-10",
+        "headline": "Rejected as a market-timing gate. Marginal at best as a rotation signal, and only at one of two parameters.",
+        "detail": [
+          "The fairest version of the claim is rotation, not timing: a ratio of A over B is most naturally used to choose between A and B. Testing it only as a SPY gate would have been a strawman, so it was tested both ways.",
+          "Rotation (own RSP while broadening, SPY while narrowing) on the 50-day average returns 11.5% at Sharpe 0.67 against 10.7% and 0.64 for simply holding SPY, and beats a random rotation whose median Sharpe over 200 trials is 0.60. So there is a small apparent edge.",
+          "But the 200-day version returns 10.9% at Sharpe 0.64, which is identical to just holding SPY. An effect that appears at one parameter and vanishes at the other is the fitted-artifact signature, and the 50-day was chosen AFTER seeing both. Drawdown is also worse than holding SPY (-58% against -55%), so it buys nothing on the risk side.",
+          "Honest status: not established. The walk-forward harness built for the overnight rule is the tool that would settle it, and until that is run the 0.03 Sharpe margin is noise-level and should not move anything.",
+          "What the indicator IS good for is undisputed and worth keeping: it measures how concentrated the market is right now. That is a real description. The error is treating a thermometer as a forecast."
+        ]
+      }
     }
   ]
 }
