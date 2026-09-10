@@ -217,6 +217,75 @@
           "What the indicator IS good for is undisputed and worth keeping: it measures how concentrated the market is right now. That is a real description. The error is treating a thermometer as a forecast."
         ]
       }
+    },
+    {
+      "id": "ig-DaidsdmgtON",
+      "platform": "instagram",
+      "url": "https://www.instagram.com/reel/DaidsdmgtON/",
+      "creator": "Matt Tran, whymattrs",
+      "title": "Memory shortage plus the robot build-out, read off a Micron earnings call",
+      "triaged": "2026-09-10",
+      "structural_claim": "Micron's chief executive says the memory shortage is structural rather than cyclical and runs past 2026, because new fabrication plants take years. The video reads that as a buy-the-dip signal on Micron, then walks outward to the physical layer the robot build-out needs: precision actuators, neodymium magnets from rare earth, and light detection and ranging sensors.",
+      "what_must_be_true": [
+        "The shortage really is structural, meaning supply cannot respond quickly, rather than an ordinary memory cycle that mean-reverts",
+        "Robot volumes actually scale, since a component thesis with no units underneath it is a story",
+        "The listed names are the ones that capture it, not the private ones the video spends most of its footage on"
+      ],
+      "load_bearing_claim": {
+        "claim": "Micron's chief executive sees the memory shortage lasting beyond 2026",
+        "verdict": "VERIFIED, and stronger than the video states",
+        "checked_against": "Bloomberg, Yahoo Finance, CNBC, TheStreet reporting on the earnings call",
+        "note": "Sanjay Mehrotra said the shortage will persist through and beyond 2026, and in later comments beyond 2027, on the grounds that meaningful new industry supply does not arrive until 2028. He also said Micron can meet only about 50% to two thirds of key customer demand, and announced a 200 billion dollar United States expansion targeting 40% domestic manufacturing by 2036. So the framing claim holds. What the video does NOT establish is the step from 'there is a shortage' to 'therefore buy the dip', which is a valuation argument it never makes."
+      },
+      "named_companies": [
+        {
+          "name": "Micron (MU)",
+          "role": "the memory shortage itself",
+          "claim": "chief executive is telling us to buy the dip",
+          "verdict": "SHORTAGE VERIFIED. The buy-the-dip inference is the video's, not the chief executive's",
+          "us_access": "NASDAQ, ordinary access.",
+          "tradeable_us": true
+        },
+        {
+          "name": "Moog (MOG.A)",
+          "role": "precision actuators",
+          "claim": "named in passing over footage of a robotic hand",
+          "verdict": "THE MOST USEFUL NAME IN THE WHOLE CORPUS SO FAR, and the video barely pauses on it",
+          "us_access": "NYSE, ordinary access.",
+          "tradeable_us": true
+        },
+        {
+          "name": "Ouster (OUST)",
+          "role": "light detection and ranging sensors",
+          "claim": "shown via its SEC Form 8-A registration",
+          "verdict": "REAL AND LISTED, but pre-profit",
+          "us_access": "NASDAQ Global Select, ordinary access.",
+          "tradeable_us": true
+        }
+      ],
+      "markers": [
+        "no_position_disclosure",
+        "no_methodology",
+        "engagement_bait"
+      ],
+      "marker_note": "Ends on 'Comment ROBOT', which is an engagement and list-building play rather than analysis. To its credit it is the ONLY video in this corpus that carries a written disclaimer stating the creator is not a licensed financial adviser. Most of the runtime is footage of PRIVATE companies (Agility Robotics, NEURA, Mentee, Dexterity, REV8) that no retail account can buy, which pads the sense of opportunity without adding any.",
+      "expressions": [
+        "MU",
+        "MOG-A",
+        "OUST"
+      ],
+      "expression_note": "Only three of the many companies shown are actually listed. The rest are private, which is the recurring shape of these robotics videos: the footage is of things you cannot own.",
+      "fund_check": {
+        "as_of": "2026-09-10",
+        "source": "trade-identifier and financial-researcher, run 2026-09-10",
+        "headline": "Moog passes BOTH screens, and it answers a gap the earlier robotics thesis left open.",
+        "detail": [
+          "Moog: ELIGIBLE on trend (11% above its 200-day, 12-month-minus-1-month momentum 118%) and QUALITY 4 out of 5 on fundamentals (return on equity 18%, revenue growth 17%, free cash flow positive at 0.35 billion). Only the second name in this entire saved-content corpus to clear both, after Micron. Priced richly though, at 31 times earnings with a price/earnings-to-growth ratio of 1.49, so the verdict is quality but pricey rather than cheap.",
+          "THE CROSS-VIDEO FINDING, which is the real output here. The earlier robotics thesis argued actuators are the constrained layer, then named Sanhua (no United States listing at all) and Harmonic Drive (an over-the-counter receipt that FAILED the tradability gate on 36% stale prints). Moog is a United States listed precision-actuator maker that clears both screens. It is a directly investable expression of that same bottleneck argument, and the video that made the argument never mentioned it while this one names it in passing without noticing what it has.",
+          "Micron: ELIGIBLE and previously QUALITY 5 out of 5, but note it is now 58% above its 200-day with 552% twelve-month momentum and 97% annualised volatility. Calling that a dip requires ignoring where the price already is. The cyclical-peak caveat recorded earlier still applies: a low forward multiple on peak memory earnings is the classic value-trap shape.",
+          "Ouster: ELIGIBLE on trend but SPECULATIVE on fundamentals, unprofitable and cash-burning at 129% annualised volatility. Passes one screen, not both."
+        ]
+      }
     }
   ],
   "tradability": {
@@ -271,7 +340,7 @@
     },
     "BOTZ": {
       "ticker": "BOTZ",
-      "dollar_vol": 21725725.42076111,
+      "dollar_vol": 21725727.8465271,
       "spread": 0.014606293984862491,
       "stale_frac": 0.01,
       "n_obs": 501,
@@ -305,7 +374,7 @@
     },
     "FIW": {
       "ticker": "FIW",
-      "dollar_vol": 4160179.2205810547,
+      "dollar_vol": 4160178.9138793945,
       "spread": 0.009115077857956644,
       "stale_frac": 0.0,
       "n_obs": 501,
@@ -322,7 +391,7 @@
     },
     "GOOGL": {
       "ticker": "GOOGL",
-      "dollar_vol": 7336074786.099243,
+      "dollar_vol": 7336075253.007507,
       "spread": 0.014962292609351543,
       "stale_frac": 0.002,
       "n_obs": 501,
@@ -344,7 +413,7 @@
       "stale_frac": 0.354,
       "n_obs": 501,
       "exchange": "PNK",
-      "home_corr": 0.28163754140573366,
+      "home_corr": 0.2816376379048616,
       "home": "6324.T",
       "is_etf": false,
       "spread_measurable": false,
@@ -359,6 +428,23 @@
         "0.95% quoted spread NOT COUNTED: the feed failed its own canary, so this number is not real"
       ],
       "status": "NOT TRADEABLE AT SIZE"
+    },
+    "MOG-A": {
+      "ticker": "MOG-A",
+      "dollar_vol": 37533777.697753906,
+      "spread": 0.03354059630804175,
+      "stale_frac": 0.004,
+      "n_obs": 501,
+      "exchange": "NYQ",
+      "home_corr": null,
+      "home": null,
+      "is_etf": false,
+      "spread_measurable": false,
+      "fails": [],
+      "notes": [
+        "3.35% quoted spread NOT COUNTED: the feed failed its own canary, so this number is not real"
+      ],
+      "status": "TRADEABLE"
     },
     "MP": {
       "ticker": "MP",
@@ -375,9 +461,41 @@
       "notes": [],
       "status": "TRADEABLE"
     },
+    "MU": {
+      "ticker": "MU",
+      "dollar_vol": 4098671137.5,
+      "spread": 0.004081632653061225,
+      "stale_frac": 0.0,
+      "n_obs": 501,
+      "exchange": "NMS",
+      "home_corr": null,
+      "home": null,
+      "is_etf": false,
+      "spread_measurable": false,
+      "fails": [],
+      "notes": [],
+      "status": "TRADEABLE"
+    },
+    "OUST": {
+      "ticker": "OUST",
+      "dollar_vol": 41370872.16682434,
+      "spread": 0.18417639429312585,
+      "stale_frac": 0.006,
+      "n_obs": 501,
+      "exchange": "NMS",
+      "home_corr": null,
+      "home": null,
+      "is_etf": false,
+      "spread_measurable": false,
+      "fails": [],
+      "notes": [
+        "18.42% quoted spread NOT COUNTED: the feed failed its own canary, so this number is not real"
+      ],
+      "status": "TRADEABLE"
+    },
     "PHO": {
       "ticker": "PHO",
-      "dollar_vol": 3836150.0785827637,
+      "dollar_vol": 3836149.661254883,
       "spread": 0.06553115808194804,
       "stale_frac": 0.004,
       "n_obs": 501,
@@ -460,7 +578,7 @@
     },
     "SPY": {
       "ticker": "SPY",
-      "dollar_vol": 39669351628.9978,
+      "dollar_vol": 39669347451.416016,
       "spread": 1.3197748464100018e-05,
       "stale_frac": 0.0,
       "n_obs": 501,
@@ -482,7 +600,10 @@
     "CGW",
     "FIW",
     "GOOGL",
+    "MOG-A",
     "MP",
+    "MU",
+    "OUST",
     "PHO",
     "RIOT",
     "ROBO",
