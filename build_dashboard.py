@@ -703,6 +703,40 @@ def build_panels(live, macro, on_res, port=None, tips=None, theses=None):
         source="Video derived. Not implementable as stated.",
     ))
 
+    panels.append(dict(
+        tier=4, title="Custody risk: the loss this system cannot see",
+        subtitle="A scope limit, not a strategy. Recorded because the gap is real.",
+        body=[
+            "Every model here reasons about PRICE. Strategy C's regime gate, the "
+            "trend exit, inverse-vol sizing and the drawdown numbers all describe "
+            "what happens when a position falls in value.",
+            "A position can also go to zero while its price is fine, because the "
+            "holder no longer controls it. An exchange failure, a hack, a frozen "
+            "withdrawal or a lost key produces a total loss that no price series "
+            "ever shows and no trend exit can act on.",
+            "This matters here specifically because crypto IS wired in: "
+            "system_strategy_evaluator.py routes crypto symbols to "
+            "algo_crypto.py, a trend filter with RSI and MACD confirmation. So "
+            "the system will happily score a crypto position while being blind "
+            "to the failure mode that has historically destroyed the most "
+            "crypto holdings.",
+        ],
+        why=[
+            "Nothing in this repo references custody, counterparty, or exchange "
+            "risk. Measured by search, not assumed.",
+            "It is not mechanizable from price data, which is the only data this "
+            "system consumes. There is no series to backtest against.",
+            "It is listed here rather than left out so that the drawdown figures "
+            "elsewhere on this page are read for what they are: price risk only, "
+            "on the assumption the asset is still yours.",
+            "The mitigation is operational rather than algorithmic, so it belongs "
+            "in how an account is held, not in a strategy rule.",
+        ],
+        source=("Surfaced by a 2017 crypto retrospective that stated no rules at "
+                "all. The account itself is not evidence and earns no tier; the "
+                "gap it pointed at was then verified against this repo."),
+    ))
+
     # ---------------------------------------------------------- watchlist
     if tips:
         counts = tips.get('counts', {})
