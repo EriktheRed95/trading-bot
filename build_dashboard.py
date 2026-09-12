@@ -716,10 +716,18 @@ def build_panels(live, macro, on_res, port=None, tips=None, theses=None):
             "ever shows and no trend exit can act on.",
             "This matters here specifically because crypto IS wired in: "
             "system_strategy_evaluator.py routes crypto symbols to "
-            "algo_crypto.py, a trend filter with RSI and MACD confirmation. So "
-            "the system will happily score a crypto position while being blind "
-            "to the failure mode that has historically destroyed the most "
-            "crypto holdings.",
+            "algo_crypto.py, a trend filter with RSI and MACD confirmation, and "
+            "BTC-USD sits in the live watchlist at main.py line 20. So the "
+            "system will happily score a crypto position while being blind to "
+            "this entire class of loss.",
+            "The scale is not hypothetical, and it is worth carrying the real "
+            "figures rather than an adjective. Chainalysis estimates about 1.8 "
+            "million bitcoin are lost, roughly 8.5% of supply, from wallets "
+            "untouched since 2014, rising to about 2.9 million or 14% once "
+            "Satoshi's holdings are included. Theft is separate and smaller "
+            "against supply but large in dollars: 3.4 billion in 2025, with the "
+            "single largest exchange theft at 1.5 billion. None of that is "
+            "price risk, and none of it appears in a price series.",
         ],
         why=[
             "Nothing in this repo references custody, counterparty, or exchange "
@@ -734,7 +742,10 @@ def build_panels(live, macro, on_res, port=None, tips=None, theses=None):
         ],
         source=("Surfaced by a 2017 crypto retrospective that stated no rules at "
                 "all. The account itself is not evidence and earns no tier; the "
-                "gap it pointed at was then verified against this repo."),
+                "gap it pointed at was then verified against this repo "
+                "(system_strategy_evaluator.py lines 12-13, main.py line 20, and "
+                "a repo-wide search for custody, counterparty and exchange risk "
+                "that returns nothing). Loss figures from Chainalysis."),
     ))
 
     # ---------------------------------------------------------- watchlist
