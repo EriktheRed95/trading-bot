@@ -21,3 +21,6 @@ google-api-python-client>=2.130
 
 # Live execution via Charles Schwab (only needed when DRY_RUN=False)
 schwab-py>=1.3
+
+# Public Coinbase candle data (no authenticated trading)
+requests>=2.31

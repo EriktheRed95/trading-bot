@@ -11,3 +11,7 @@ __pycache__/
 *.py[cod]
 # Ad-hoc run logs
 pit_run*.log
+
+# Private paper portfolio, never ship to public dashboard builds
+/runtime/
+/.pytest_cache/

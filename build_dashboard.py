@@ -15,7 +15,7 @@ Tier 2 sits high on the page rather than in a footer. Most dashboards show only
 what works, which is exactly why disproven ideas creep back in.
 
 The dashboard is READ ONLY and observational. It places no orders, it recommends
-no sizing, and it is not a step toward live trading: it reads DRY_RUN out of
+no live orders; the separate local control center runs paper cycles: it reads DRY_RUN out of
 main.py and reports what it finds rather than asserting a state.
 
 Numbers come from two places, never from typing:
@@ -23,7 +23,7 @@ Numbers come from two places, never from typing:
   - overnight_results.json, written by overnight_vs_intraday.py
 Static repo results are labeled with the file and script that reproduce them.
 
-Usage:  python build_dashboard.py [--out DIR] [--no-fetch]
+Usage:  python build_dashboard.py [--out DIR] [--no-portfolio]
 """
 import argparse
 import json
@@ -103,64 +103,12 @@ def fetch_live():
 
 
 def current_portfolio(top_n=10):
-    """What Strategy C's RULES select as of today, with inverse-volatility weights.
-
-    This is a MODEL portfolio, not a position book. DRY_RUN is True and nothing
-    in this repo has ever traded, so there are no held positions to report. What
-    this answers is the honest live question: if the validated strategy were run
-    today, what would it hold and at what weight?
-
-    Ranking comes from live_picks.live_ranking with the sentiment tilt OFF, since
-    that tilt is in the rejected tier. Sizing repeats run_allocator's own rule:
-    weight proportional to 1/volatility, normalized.
-    """
-    from live_picks import live_ranking
-    from strategy_c import BROAD_UNIVERSE, RISK_OFF_TICKERS, load_prices
-
-    close = load_prices(BROAD_UNIVERSE + list(RISK_OFF_TICKERS), period="2y")
-    r = live_ranking(close, BROAD_UNIVERSE, top_n=top_n, use_sentiment=False)
-    d = r['date']
-    sma = close.rolling(200).mean()
-    vol = close.pct_change().rolling(63).std() * (252 ** 0.5)
-
-    out = {'asof': str(d.date()), 'risk_on': r['risk_on'],
-           'n_eligible': len(r['eligible']), 'top_n': top_n, 'holdings': [],
-           'risk_off': [], 'history': {}}
-
-    if r['risk_on']:
-        picks = r['picks_without'][:top_n]
-        inv = 1.0 / vol.loc[d, picks]
-        w = inv / inv.sum()
-        for t in picks:
-            out['holdings'].append({
-                'ticker': t, 'weight': float(w[t]) * 100.0,
-                'vol': float(vol.loc[d, t]) * 100.0,
-                'price': float(close.at[d, t]),
-                'above_sma': float(close.at[d, t] / sma.at[d, t] - 1.0) * 100.0,
-                'score': float(r['base'].get(t, float('nan'))),
-            })
-            out['history'][t] = [float(x) for x in close[t].dropna().iloc[-126:]]
-    else:
-        # Dynamic risk-off sleeve: hold each candidate only while it is trending.
-        trending = [c for c in RISK_OFF_TICKERS
-                    if c in close.columns and close[c].iloc[-1] > sma[c].iloc[-1]]
-        for c in RISK_OFF_TICKERS:
-            if c not in close.columns:
-                continue
-            up = c in trending
-            out['risk_off'].append({
-                'ticker': c, 'trending': up,
-                'weight': (100.0 / len(trending)) if up and trending else 0.0,
-                'price': float(close[c].iloc[-1]),
-                'above_sma': float(close[c].iloc[-1] / sma[c].iloc[-1] - 1.0) * 100.0,
-            })
-            out['history'][c] = [float(x) for x in close[c].dropna().iloc[-126:]]
-        out['cash_pct'] = 0.0 if trending else 100.0
-
-    spy = close['SPY'].dropna()
-    out['history']['SPY'] = [float(x) for x in spy.iloc[-378:]]
-    out['history']['SPY_SMA200'] = [float(x) for x in sma['SPY'].dropna().iloc[-378:]]
-    return out
+    """The static report and local paper bot use the same validated inputs."""
+    from trading_engine import signal_snapshot
+    snap = signal_snapshot(top_n=top_n)
+    return {**snap, 'top_n':top_n, 'n_eligible':snap['eligible'],
+            'risk_off':[{**h,'trending':True} for h in snap['holdings']] if not snap['risk_on'] else [],
+            'history':{}}
 
 
 def direction(value, neutral):
@@ -208,8 +156,8 @@ def build_panels(live, macro, on_res, port=None, tips=None, theses=None):
             portfolio=True,
             body=[
                 "There are no active positions to report, and that is not an "
-                "omission. DRY_RUN is True, nothing in this repo has ever placed "
-                "an order, and no live or paper account is connected. What this "
+                "omission in this public research export. It does not load the local paper book. No broker receives "
+                "orders from this report. Use python main.py to see persistent paper positions. What this "
                 "panel answers instead is the live question worth asking: if the "
                 "validated strategy ran today, what would it hold and at what "
                 "weight?",
@@ -225,7 +173,7 @@ def build_panels(live, macro, on_res, port=None, tips=None, theses=None):
 
     panels.append(dict(
         tier=1, title="Strategy C: trend-following, regime-gated allocator",
-        subtitle="The only strategy in this stack with earned authority.",
+        subtitle="Active paper research candidate; historical results are not a live track record.",
         body=[
             "Long only. Holds by default and sits out when the regime turns. "
             "Rebalances monthly, with costs charged on turnover.",
@@ -248,10 +196,10 @@ def build_panels(live, macro, on_res, port=None, tips=None, theses=None):
             ("Equal-weight hold, same 65 names", "19.8%", "0.99", "-49%", "0.40"),
             ("SPY buy and hold", "10.8%", "0.64", "-55%", "0.20"),
         ],
-        metric_note="65-name pool, 1993 to 2026. It beats equal-weight holding "
+        metric_note="Historical 65-name pool, 1993 to 2026. Survivor selection and constant-weight return accounting remain unvalidated for live use. It beats equal-weight holding "
                     "of the same names, so the edge is the strategy and not the "
                     "stock list.",
-        robust="Across every universe tested: Sharpe roughly 1.1 to 1.25 against "
+        robust="Historical research reports Sharpe roughly 1.1 to 1.25 against "
                "SPY's 0.64, and drawdowns of -26% to -35% against SPY's -55%. "
                "The honest headline is not large returns. It is about half the "
                "drawdown at nearly double the Sharpe ratio.",
@@ -1540,15 +1488,13 @@ def render_macro(p):
     m, live = p['_macro'], p['_live']
     s = live['series']
     o = ['<div class="mgrid">']
-    for tick, name, val, sub in (
-            ('GC=F', 'Gold', f"{s['GC=F']['last']:,.0f}",
-             f"{s['GC=F']['pct_60d']:+.1f}% / {MACRO_LOOKBACK}d"),
-            ('CL=F', 'Crude oil', f"{s['CL=F']['last']:,.2f}",
-             f"{s['CL=F']['pct_60d']:+.1f}% / {MACRO_LOOKBACK}d"),
-            ('^TNX', '10-year yield', f"{s['^TNX']['last']:.2f}%",
-             f"{m['yield_bps']:+.0f} bp / {MACRO_LOOKBACK}d")):
+    for tick, name in [('GC=F','Gold'),('CL=F','Crude oil'),('^TNX','10-year yield')]:
         if tick not in s:
+            o.append(f'<div class="tile"><div class="k">{name}</div><div class="v">Unavailable</div><div class="d">No current reading; not an all-clear</div></div>')
             continue
+        val = f"{s[tick]['last']:,.2f}" + ('%' if tick == '^TNX' else '')
+        sub = (f"{m['yield_bps']:+.0f} bp / {MACRO_LOOKBACK}d" if tick == '^TNX'
+               else f"{s[tick]['pct_60d']:+.1f}% / {MACRO_LOOKBACK}d")
         d = {'GC=F': m['gold'], 'CL=F': m['oil'], '^TNX': m['yield']}[tick]
         o.append(f'<div class="tile"><div class="k">{name}</div><div class="v">{val}</div>'
                  f'<div class="d dir-{d}">{sub} ({d})</div></div>')

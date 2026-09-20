@@ -1,3 +1,9 @@
+> **Expanded paper lab — September 11, 2026:** Corrected fixed-share backtests and matched benchmarks are available in the dashboard. The 62-market hourly paper lab uses independent persistent experiment accounts alongside the original core. See [EXPANDED-PAPER.md](EXPANDED-PAPER.md). Historical archive claims are not automatically validated by this update.
+
+> **Current application — September 11, 2026:** Launch `Start-Trading.ps1` or `python main.py` for the unified local dashboard and persistent paper bot. Automatic paper checks run while the page is open; pause state and positions survive restarts. No live brokerage execution is connected. See [UNIFIED-TRADING.md](UNIFIED-TRADING.md) for operation, test coverage and limitations.
+>
+> The historical research below is retained as a record, not as validation of the new paper execution model. In particular, the historical Strategy C allocator's constant-weight accounting and survivor/data-quality limitations require further review. The original main.py and Streamlit dashboard entrypoints have been replaced by the shared application.
+
 # 🤖 Adaptive Hybrid Trading Engine
 
 A multi-regime backtesting and live-trading framework that classifies each asset by its volatility/trend profile, applies a different strategy to each class, and overlays a macro filter for global risk-on/risk-off conditions.
