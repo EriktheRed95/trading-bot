@@ -33,6 +33,26 @@ def session_close_for(day):
         return None
     return time(13) if day.isoformat() in EARLY_CLOSES else time(16)
 
+
+def complete_session_break(previous_end, next_end, minutes):
+    """True only if no regular-session bar can lie between two observations on different dates.
+
+    Requires the earlier bar to be its session's final bar, the later bar to be its
+    session's first bar, and no published trading session in between.
+    """
+    a, b = previous_end.astimezone(NY), next_end.astimezone(NY)
+    close = session_close_for(a.date())
+    if close is None or a.time() != close or session_close_for(b.date()) is None:
+        return False
+    if b.time() != (datetime.combine(b.date(), time(9, 30)) + timedelta(minutes=minutes)).time():
+        return False
+    day = a.date() + timedelta(days=1)
+    while day < b.date():
+        if session_close_for(day) is not None:
+            return False
+        day += timedelta(days=1)
+    return True
+
 VERSION = 'stock-lab-v1'
 
 
@@ -246,12 +266,13 @@ class StockExperiments:
         for previous, row in zip(record['observations'], record['observations'][1:]):
             a, b = datetime.fromisoformat(previous['asof']), datetime.fromisoformat(row['asof'])
             same_day = a.astimezone(NY).date() == b.astimezone(NY).date()
-            row['unobserved_bars_possible'] = (b - a > timedelta(minutes=minutes)) if same_day else None
+            row['unobserved_bars_possible'] = ((b - a > timedelta(minutes=minutes)) if same_day
+                                               else not complete_session_break(a, b, minutes))
             if row['unobserved_bars_possible']:
                 gaps.append({'from_asof': previous['asof'], 'to_asof': row['asof'], 'bar_gap_hours': row['bar_gap_hours']})
         record['gaps'] = gaps
         record['provenance'].update(gap_count=len(gaps), session_close_basis='Provider start plus bar interval; at least 2 minutes delay',
-            note='Forward observations only. Same-session cadence gaps flagged; overnight gaps and holidays not independently reconciled. No historical replay. Raw closes exclude dividends.')
+            note='Forward observations only. Same-session cadence gaps and incomplete session breaks (missed session tail, head or whole published NYSE sessions) are flagged; emergency closures are not reconciled. No historical replay. Raw closes exclude dividends.')
         return record
 
     def status(self):
