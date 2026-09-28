@@ -10,7 +10,7 @@ All accounts use SPY, QQQ, AAPL, MSFT, NVDA and AMD. Each strategy runs separate
 
 Each qualifying symbol receives one sixth of the target portfolio. Unused allocations stay in cash. Long-only, no leverage, no shorting; positions may remain overnight. Signals can change each completed bar but fills require a later observed completed bar, after the original signal was actually observed. Checks are throttled to one per minute per cadence, shared across accounts. No missed bars are replayed into the forward ledger. Pending targets expire after three bar intervals.
 
-The dashboard must remain open, the computer awake and the local server running. Global pause stops all experiments; the stock group also has its own pause. This does not install a background schedule or connect to a brokerage.
+The server's background collector (see UNIFIED-TRADING.md) checks each cadence separately, shortly after each bar completes during NYSE regular sessions. It stops checking once that bar is recorded, and retries at most once a minute while it is not. The 5m and 15m cadences have separate locks, so a stuck request for one does not block the other. The dashboard does not need to be open. The computer must be on, awake and online, and the local server running. Global pause stops all experiments, and the stock group also has its own persistent pause. Nothing connects to a brokerage.
 
 Costs: 6 basis points per side for strategy and reference, inherited from the existing paper engine. Raw provider closes are price returns, not total returns. Dividends, corporate actions, order-book capacity, actual spreads and taxes are not fully modeled. Results are experiments, not projected profits; more correlated accounts do not replace a longer out-of-sample record.
 

@@ -157,6 +157,9 @@ class StockExperiments:
         self.root.mkdir(parents=True, exist_ok=True)
         self.fetcher, self.clock = fetcher, clock
         self.lock = threading.RLock()
+        # One lock per cadence: a stuck 5-minute request cannot hold the 15-minute
+        # books, and the background collector shares these with dashboard requests.
+        self.interval_locks = {minutes: threading.Lock() for minutes in INTERVALS}
         self.worker = None
         self.meta = self.root / 'stock-lab-state.sqlite'
         with self._connection() as con:
@@ -197,6 +200,9 @@ class StockExperiments:
             con.execute('INSERT OR REPLACE INTO state VALUES(?,?)', (key, json.dumps(now.isoformat())))
         return True
 
+    def is_paused(self):
+        return bool(self._get('paused', False))
+
     def pause(self, paused):
         with self.lock:
             self._put('paused', bool(paused))
@@ -215,45 +221,75 @@ class StockExperiments:
             return True
 
     def run_cycle(self, should_pause=lambda: False):
-        now = self.clock()
         if self._get('paused', False) or should_pause():
             return self.status()
-        self._put('last_attempt', now.isoformat())
-        if not session_open(now):
-            self._put('interval_status', {str(m): 'Outside regular weekday session; waiting for fresh provider bars' for m in INTERVALS})
-            return self.status()
-        messages = self._get('interval_status', {})
         for minutes in INTERVALS:
             if should_pause() or self._get('paused', False):
                 break
-            if not self._claim_request(minutes, now):
-                continue
+            lock = self.interval_locks[minutes]
+            if not lock.acquire(blocking=False):
+                continue  # this cadence is already being checked
             try:
-                raw = self.fetcher(minutes)
-                observed = self.clock()
-                frame = completed_prices(raw, minutes, observed)
-                if should_pause() or self._get('paused', False):
-                    break
-                end = frame.index[-1].isoformat()
-                prices = {s: float(frame[s].iloc[-1]) for s in BASKET}
-                for strategy in (*STRATEGIES, 'buy_hold'):
-                    key = f'{strategy}_{minutes}m'
-                    book = self.books[key]
-                    status = book.status()
-                    prior = (status.get('snapshot') or {}).get('target_weights', {})
-                    target = ({s: 1 / len(BASKET) for s in BASKET} if strategy == 'buy_hold'
-                              else target_weights(frame, strategy, prior))
-                    book.cycle({'asof': end, 'bar_end': end, 'fetched_at': observed.isoformat(),
-                                'prices': prices, 'target_weights': target,
-                                'source': 'Yahoo Finance via yfinance; raw close, prepost=False',
-                                'interval': f'{minutes}m', 'strategy': strategy,
-                                'calendar': 'NYSE published 2026-2027 regular sessions; five minute final-bar observation window',
-                                'delay_minutes': 2})
-                messages[str(minutes)] = f'Observed completed {minutes}m bar ending {end}'
-            except Exception as exc:
-                messages[str(minutes)] = f'Held: {type(exc).__name__}: {exc}'
-        self._put('interval_status', messages)
+                self.run_interval(minutes, should_pause)
+            finally:
+                lock.release()
         return self.status()
+
+    def _set_interval_status(self, minutes, message):
+        with self.lock:
+            messages = self._get('interval_status', {})
+            messages[str(minutes)] = message
+            self._put('interval_status', messages)
+
+    def run_interval(self, minutes, should_pause=lambda: False):
+        """One cadence pass for a caller holding interval_locks[minutes].
+
+        Returns (kind, message): ok, held, error, closed, skipped or paused. 'ok'
+        covers both a new bar and a re-check of a bar already recorded; the
+        message says which.
+        """
+        now = self.clock()
+        if self._get('paused', False) or should_pause():
+            return 'paused', 'Stock experiments paused'
+        self._put('last_attempt', now.isoformat())
+        if not session_open(now):
+            message = 'Outside regular weekday session; waiting for fresh provider bars'
+            self._set_interval_status(minutes, message)
+            return 'closed', message
+        if not self._claim_request(minutes, now):
+            return 'skipped', f'{minutes}m prices were requested less than a minute ago'
+        try:
+            raw = self.fetcher(minutes)
+            observed = self.clock()
+            frame = completed_prices(raw, minutes, observed)
+            if should_pause() or self._get('paused', False):
+                return 'paused', 'Paused after the provider request; nothing recorded'
+            end = frame.index[-1].isoformat()
+            prices = {s: float(frame[s].iloc[-1]) for s in BASKET}
+            new = 0
+            for strategy in (*STRATEGIES, 'buy_hold'):
+                key = f'{strategy}_{minutes}m'
+                book = self.books[key]
+                status = book.status()
+                prior = (status.get('snapshot') or {}).get('target_weights', {})
+                target = ({s: 1 / len(BASKET) for s in BASKET} if strategy == 'buy_hold'
+                          else target_weights(frame, strategy, prior))
+                outcome = book.cycle({'asof': end, 'bar_end': end, 'fetched_at': observed.isoformat(),
+                            'prices': prices, 'target_weights': target,
+                            'source': 'Yahoo Finance via yfinance; raw close, prepost=False',
+                            'interval': f'{minutes}m', 'strategy': strategy,
+                            'calendar': 'NYSE published 2026-2027 regular sessions; five minute final-bar observation window',
+                            'delay_minutes': 2})
+                new += outcome not in ('Already processed this session', 'Paused')
+            message = (f'Observed completed {minutes}m bar ending {end}' if new else
+                       f'No new {minutes}m bar yet; latest completed bar {end} was already recorded')
+            kind = 'ok'
+        except PaperHold as exc:
+            message, kind = f'Held: PaperHold: {exc}', 'held'
+        except Exception as exc:
+            message, kind = f'Held: {type(exc).__name__}: {exc}', 'error'
+        self._set_interval_status(minutes, message)
+        return kind, message
 
 
     def record(self, account_id):
@@ -297,11 +333,13 @@ class StockExperiments:
                     'matched_observations': len(common), 'matched_record': matched})
         return {'mode': 'PAPER ONLY', 'accounts': accounts, 'capital': INITIAL_CASH * 6,
                 'reference_capital': INITIAL_CASH * 2, 'basket': list(BASKET),
-                'paused': self._get('paused', False), 'busy': bool(self.worker and self.worker.is_alive()), 'last_attempt': self._get('last_attempt'),
+                'paused': self._get('paused', False),
+                'busy': bool(self.worker and self.worker.is_alive()) or any(l.locked() for l in self.interval_locks.values()),
+                'last_attempt': self._get('last_attempt'),
                 'interval_status': self._get('interval_status', {}), 'cost_bps_per_side': COST_PER_SIDE * 10000,
                 'notes': ['Six isolated $25,000 accounts; two separate same-cadence equal-weight buy-and-hold references.',
                           'Long-only, unlevered; up to one sixth of capital per stock; unallocated cash earns zero.',
                           'More observations are not independent evidence of profitability; correlated basket and strategies.',
                           'Raw provider closes omit dividends and corporate-action reconciliation. No profit projection.',
-                          'Runs only when requested by the dashboard; public data is not a real-time execution feed.',
+                          'Checked by the local background collector shortly after each bar completes while the server runs and the computer is awake; public data is not a real-time execution feed.',
                           'NYSE published 2026–2027 calendar; unsupported years, holidays, early closes and stale data hold trading. Emergency closures rely on provider freshness.']}

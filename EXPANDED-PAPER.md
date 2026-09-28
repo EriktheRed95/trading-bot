@@ -4,7 +4,7 @@ The existing dashboard at http://127.0.0.1:8791 now has Core portfolio, Markets 
 
 ## Running and collecting
 
-Keep the local server running, computer awake with internet, and the dashboard page open. Checks are requested every minute and market fetches throttled to five minutes; browser suspension can interrupt them. This is not an unattended background trading service. Pause applies to the core, references and experiments and survives restart.
+Superseded September 27, 2026: checks now come from the server's background collector, and the dashboard page does not need to be open (see UNIFIED-TRADING.md, Background collection). The local server must still be running, and the computer on, awake and online. It is not a cloud service. Pause applies to the core, references and experiments and survives restart.
 
 The existing core book and previous observations are preserved. New observations store observation time, price-bar time, equity, cash, positions and strategy version. Trades store the signal bar, fill bar, quantity, reference price and modeled cost. These persist in SQLite under runtime. Historical startup bars warm indicators; they are NEVER replayed as forward fills. The actual forward record starts when each account first observes data. Time must elapse to assess performance; today's installation is not a validated track record.
 

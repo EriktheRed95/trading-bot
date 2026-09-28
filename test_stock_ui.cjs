@@ -1,6 +1,6 @@
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const html=fs.readFileSync(__dirname+'/trading_ui.html','utf8'),script=html.match(/<script>([\s\S]*?)<\/script>/)[1];new vm.Script(script);
-const block=script.slice(script.indexOf('// Stock paper accounts:')).replace('stockRefresh().then(stockHeartbeat);setInterval(stockHeartbeat,60000);setInterval(stockRefresh,15000);','');
+const block=script.slice(script.indexOf('// Stock paper accounts:')).replace('stockRefresh();setInterval(stockRefresh,15000);','');
 const nodes={},tables={};let fail=false;
 const account={id:'trend_5m',label:'Trend',interval:'5m',initial:25000,equity:24999,cash:20000,pnl:-1,observation_count:3,fill_count:1,matched_observations:3,matched_record:false,return_pct:-0.004,benchmark_return_pct:null,excess_return_pct:null};
 const payload={accounts:[account],capital:150000,reference_capital:50000,basket:['SPY'],paused:false,busy:false,interval_status:{5:'Closed'},notes:['No leverage'],cost_bps_per_side:6};

@@ -154,6 +154,19 @@ class PaperBook:
         with self.connection() as c:
             c.execute('UPDATE book SET paused=? WHERE id=1', (int(paused),))
 
+    def is_paused(self):
+        with self.connection() as c:
+            return bool(c.execute('SELECT paused FROM book WHERE id=1').fetchone()[0])
+
+    def observation_marker(self):
+        """Read-only count and latest recorded bar. A scheduler compares markers
+        before and after a check to tell a new observation from a duplicate."""
+        with self.connection() as c:
+            count = c.execute('SELECT count(*) FROM observations').fetchone()[0]
+            row = c.execute('SELECT asof,observed_at FROM observations ORDER BY asof DESC LIMIT 1').fetchone()
+        return {'count':count, 'latest_bar':row['asof'] if row else None,
+                'latest_observed_at':row['observed_at'] if row else None}
+
     def record_error(self, message):
         with self.connection() as c:
             c.execute('INSERT INTO events(at,message) VALUES(?,?)', (datetime.now(timezone.utc).isoformat(),message))

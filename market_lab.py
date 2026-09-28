@@ -183,6 +183,8 @@ class MarketLab:
     def __init__(self, root):
         self.root=Path(root);self.root.mkdir(parents=True,exist_ok=True)
         self.message='Waiting for first hourly observation.'
+        # Read after the provider request, never before it (tests replace it).
+        self.clock=lambda:datetime.now(timezone.utc)
         intake=self.root/'intake.json'
         if intake.exists():
             for asset in json.loads(intake.read_text(encoding='utf-8')):
@@ -234,7 +236,7 @@ class MarketLab:
         if raw is None:
             have_history=all((self.root/'observed'/f'{t}.csv').exists() for t,a in ASSETS.items() if a['group']=='Crypto')
             raw=fetch_hourly(crypto_days=12 if have_history else 60)
-        now=now or datetime.now(timezone.utc)
+        now=now or self.clock()
         updated=0;held={}
         for symbol,asset in ASSETS.items():
             if should_pause():

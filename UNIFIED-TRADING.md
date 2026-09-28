@@ -2,7 +2,52 @@
 
 Launch `Start-Trading.ps1` or `python main.py`. The compatibility command `python dashboard.py` opens the same application. Both old entrypoints have been replaced; their prior versions remain in git history.
 
-The local control center is http://127.0.0.1:8791. Automatic checks run while a browser page is open, at most every five minutes. Check now requests an immediate check. Pause is persistent; Resume starts checks again. Closing every page stops new requests, although an in-flight cycle may finish. The idle server can remain running. No new task scheduler entry is installed.
+The local control center is http://127.0.0.1:8791. Pause is persistent, and Resume starts checks again. Check now requests an immediate check.
+
+## Background collection
+
+Automatic checks come from a background collector inside the server process (`collector.py`). It needs no browser page, dashboard tab or AI session, and closing every page does not stop it. The collector does not add a second way of collecting data. Every family uses its own run code, locks and pause state, the same ones its dashboard button uses:
+
+| Family | Code path | When a check is due |
+|---|---|---|
+| Core daily portfolio, core benchmarks and research helpers | `Controller.run_core` | When the bundled NYSE calendar says a newer completed session can exist (from 16:15 New York). It rechecks every 5 minutes until that session is recorded, backing off to 30 minutes after failures. |
+| Hourly market lab | `Controller.run_hourly` | Every 5 minutes, as before, backing off to 30 minutes after failures. |
+| Active 15-minute crypto | `ActiveExperiment.run_guarded` | Once the latest completed 15-minute bar (2-minute delay) is not recorded. Retries every 2 minutes, backing off to 15. |
+| Stock labs, 5m and 15m separately | `StockExperiments.run_interval` | During NYSE regular sessions only, once the latest completed bar is not recorded. Retries every minute, which is the existing durable per-cadence throttle, backing off to one bar interval. |
+
+The timer ticks every 15 seconds. A family starts only when it is unpaused, idle and due. The scheduler, dashboard buttons and any old open tab all pass through the same `Collector.request` gate and family lock, so one cannot duplicate another's work. The single exception is Check now for the core: it deliberately re-checks even when the session is already recorded. That is idempotent: the book records `Already processed this session`, which is not a new observation.
+
+Each family runs in its own worker thread, so a failing or hung family does not stop the others. When a check has not returned within 5 minutes (intraday families) or 15 minutes (core and hourly), the family is shown as *Unhealthy: request not returning*. No second worker starts while its lock is held. Network calls keep their existing timeouts. If yfinance is older than 1.x and shares download state between threads, Yahoo-backed families take turns instead of fetching in parallel.
+
+`runtime/collector.sqlite3` stores the collector process heartbeat and, for each family: last attempt, source (scheduler, browser or manual), outcome, message, check count, new-observation count, consecutive failures, latest recorded bar and when it was observed. It also keeps the latest 5,000 attempts. A *check* is a provider request. A *new observation* is a bar the paper books had not recorded, measured by comparing each book's observation count before and after the check. Outcomes are `new`, `no_change`, `partial` (core accepted but a benchmark or helper step failed; retried after 30 minutes), `held` (data rejected, nothing recorded), `error`, `closed`, `skipped`, `paused` or `interrupted` (the process ended mid-check).
+
+The dashboard's Collection health panel reads `/api/collector`, which never starts a check. Per family it shows Current, Waiting for the next bar, Overdue, Market closed, No observation yet, Paused, Failing, Unhealthy or Calendar not bundled. Market closed and overdue come from the bundled NYSE 2026–2027 calendar, with holidays and 13:00 early closes, and crypto runs around the clock. Outside 2026–2027 the core still checks every 5 minutes, and the stock labs hold, as before.
+
+### What it needs, honestly
+
+- **The computer must be on, awake and online, and the server process must be running.** There is no cloud service. Nothing runs while the computer is off, asleep or hibernating, and the scheduled task never wakes it.
+- **Signed in.** The optional scheduled task (below) starts the server at logon and relaunches it every 10 minutes if it has stopped, but only while you are signed in. A locked screen is fine. Signing out stops it.
+- **Offline or sleep.** Checks fail or do not run, and the dashboard shows the families as failing or overdue. After waking or reconnecting, the next check records only the latest completed bar. Missed bars are never backfilled, never replayed as live observations and never synthesized. They stay visible as gaps in each account record. Pending targets expire under their existing rules.
+- Restarting is safe. Every paper-book write is a single SQLite transaction. A check interrupted by a crash or by `Stop-PaperCollector.ps1` is rolled back, and the next start logs it as `interrupted`. Global and family pause state are stored in the paper databases and survive restarts.
+
+### Single process
+
+The server holds an exclusive lock on `runtime/collector.lock` for its lifetime (released by the OS however it exits) and binds 127.0.0.1:8791 exclusively. A second launch for the same runtime exits immediately with code 0 and touches nothing. A different program holding the port makes the server exit with code 4. Nothing is ever killed automatically.
+
+### Scheduled start (optional, per user, no administrator rights)
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Install-PaperCollector.ps1 -DryRun     # show, register nothing
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Install-PaperCollector.ps1             # register
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Install-PaperCollector.ps1 -Uninstall  # remove
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Stop-PaperCollector.ps1 [-DisableTask] [-WhatIf]
+```
+
+The task *TradingBot Paper Collector* runs `pythonw.exe -B main.py --no-browser --restart-hung-after 60` from this folder, with no window. It runs as the current user, logged on only, at standard rights, with *do not start a new instance* set and no time limit. The installer refuses to add a second task that references this repository unless `-Force` is given. With `--restart-hung-after 60`, a server whose check has been stuck for an hour exits with code 75 so the task can start a fresh process. The hidden service logs to `runtime/service.log` and `runtime/service-errors.log`.
+
+`Stop-PaperCollector.ps1` stops one process, and only if it is the single listener on the port, answers `/api/collector` as PAPER ONLY with that same PID, and is python/pythonw running main.py or dashboard.py. It never stops python broadly. Without `-DisableTask`, the task starts the server again within 10 minutes.
+
+`Start-Trading.ps1` still opens the dashboard, starting the server (with its collector) first if needed. `python main.py --no-scheduler` serves the dashboard with manual checks only. `python -B scripts/collection_report.py [--since ISO]` reads the runtime databases read-only and counts the observations each family actually recorded.
 
 The default book starts with $10,000 of virtual cash. Filled positions, queued targets, costs, activity and trade history are stored in `runtime/paper.sqlite3`, excluded from git. This is separate from any real financial account. No brokerage credentials are loaded, and neither the server nor engine includes a live-order route. The old Schwab helper remains historical code, not an active dependency.
 
@@ -28,5 +73,7 @@ The simulation uses fractional shares and adjusted historical prices. Corporate 
 ## Verification
 
 Run `python -B -m unittest test_unified -v`. Tests use synthetic prices and temporary paper databases, never a brokerage. They cover data gaps, stale and partial bars, consistent report targets, missing macro fields, later-session fills and costs, pause/restart behavior, fixed-share drift, expired targets, duplicate/concurrent checks and local HTTP write protection.
+
+`python -B -m unittest test_collector -v`, `node test_collector_ui.cjs` and `node test_stock_ui.cjs` cover the background collector. All five families collect with no browser request. Overlapping scheduler, browser and manual requests start one worker. Global and family pause survive restarts. Failing and hung families are isolated. Closed markets are distinguished from overdue observations. Rejected data leaves every record unchanged. Single-process startup and the read-only report are also tested. They make no network requests.
 
 The server binds to loopback, checks Host/Origin on writes and requires a per-process browser token. It does not expose private state through the static research build. This is a single-user local application; remote control would require a separately designed authenticated service.

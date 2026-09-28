@@ -71,13 +71,14 @@ def snapshot(raw, now):
 
 
 class ActiveExperiment:
-    def __init__(self, root, fetch=fetch_prices):
+    def __init__(self, root, fetch=fetch_prices, clock=lambda: datetime.now(timezone.utc)):
         self.root = Path(root)
         self.book = PaperBook(self.root/'active.sqlite3', cadence='signal', cost_rate=COST,
             version=VERSION, max_pending_hours=.5)
         self.reference = PaperBook(self.root/'reference.sqlite3', cadence='signal', cost_rate=COST,
             version=VERSION+'-hold', max_pending_hours=.5)
         self.fetch = fetch
+        self.clock = clock
         self.lock = threading.Lock()
         self.last_started = None
         self.message = 'Ready: a separate $10,000 paper experiment. Waiting for completed prices.'
@@ -91,7 +92,7 @@ class ActiveExperiment:
             return 'Active experiment paused.'
         raw = self.fetch() if raw is None else raw
         # Observation time is after the network calls, never the fetch start.
-        s = snapshot(raw, now or datetime.now(timezone.utc))
+        s = snapshot(raw, now or self.clock())
         self.message = self.book.cycle(s)
         self.reference.cycle({**s, 'strategy':VERSION+'-hold',
             'target_weights':{symbol:.5 for symbol in SYMBOLS}})
@@ -106,18 +107,28 @@ class ActiveExperiment:
         self.last_started = time.monotonic()
         def run():
             try:
-                self.message = 'Checking completed 15-minute prices…'
-                self.cycle()
-            except PaperHold as exc:
-                self.message = str(exc)
-                self.book.record_error(self.message)
-            except Exception as exc:
-                self.message = f'Active refresh held ({type(exc).__name__}); prior records preserved.'
-                self.book.record_error(self.message)
+                self.run_guarded()
             finally:
                 self.lock.release()
         threading.Thread(target=run, daemon=True).start()
         return True
+
+    def run_guarded(self):
+        """One pass for a caller already holding self.lock. Returns (kind, message)."""
+        if self.book.status()['paused']:
+            return 'paused', 'Active experiment paused.'
+        try:
+            self.message = 'Checking completed 15-minute prices…'
+            self.cycle()
+            return 'ok', self.message
+        except PaperHold as exc:
+            self.message = str(exc)
+            self.book.record_error(self.message)
+            return 'held', self.message
+        except Exception as exc:
+            self.message = f'Active refresh held ({type(exc).__name__}); prior records preserved.'
+            self.book.record_error(self.message)
+            return 'error', self.message
 
     def status(self):
         a, b = self.book.status(), self.reference.status()
