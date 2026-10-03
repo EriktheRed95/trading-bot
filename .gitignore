@@ -15,3 +15,10 @@ pit_run*.log
 # Private paper portfolio, never ship to public dashboard builds
 /runtime/
 /.pytest_cache/
+
+# Private research imports: pasted links, staged uploads and extracted readings. The default
+# store is runtime/research-imports (already covered above); these guard a relocated store.
+/research-imports/
+/runtime/research-imports/
+
+reference/

@@ -31,20 +31,30 @@ def read_only(path):
     return con
 
 
+HEARTBEAT_STALE_SECONDS = 90   # collector.Collector.status: 3 ticks of 15 s, at least 90 s
+
+
 def aware(stamp):
+    """Parse an ISO time as UTC. Stored times are UTC strings, so any other offset
+    must be converted before it is compared with them as text."""
     value = datetime.fromisoformat(stamp)
-    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
 def family_report(runtime, patterns, since):
     books = sorted({p for pattern in patterns for p in runtime.glob(pattern)})
-    total = new = 0
+    total = new = unreadable = 0
     latest_bar = latest_seen = None
     for path in books:
-        con = read_only(path)
+        try:
+            con = read_only(path)
+        except sqlite3.DatabaseError:
+            unreadable += 1
+            continue
         try:
             rows = con.execute('SELECT asof, observed_at FROM observations').fetchall()
-        except sqlite3.OperationalError:
+        except sqlite3.DatabaseError:
+            unreadable += 1
             continue
         finally:
             con.close()
@@ -57,7 +67,8 @@ def family_report(runtime, patterns, since):
                 latest_bar = row['asof']
             if seen and (latest_seen is None or seen > latest_seen):
                 latest_seen = seen
-    return {'accounts': len(books), 'observations': total, 'observed_after_since': new if since else None,
+    return {'accounts': len(books), 'unreadable_accounts': unreadable, 'observations': total,
+            'observed_after_since': new if since else None,
             'latest_bar': latest_bar, 'latest_observed_at': latest_seen.isoformat() if latest_seen else None}
 
 
@@ -65,6 +76,14 @@ def collector_report(runtime, since):
     path = runtime / 'collector.sqlite3'
     if not path.exists():
         return {'installed': False}
+    try:
+        return _collector_report(path, since)
+    except sqlite3.DatabaseError as exc:
+        # An empty or half-created file must not take the whole report down.
+        return {'installed': False, 'unreadable': str(exc)}
+
+
+def _collector_report(path, since):
     con = read_only(path)
     try:
         row = con.execute('SELECT * FROM collector WHERE id=1').fetchone()
@@ -83,6 +102,9 @@ def collector_report(runtime, since):
     if heartbeat.get('heartbeat_at'):
         heartbeat['heartbeat_age_seconds'] = round(
             (datetime.now(timezone.utc) - aware(heartbeat['heartbeat_at'])).total_seconds())
+        # A process that died without a clean stop still says 'running'; only an old heartbeat reveals it.
+        heartbeat['heartbeat_stale'] = (heartbeat.get('status') == 'running'
+                                        and heartbeat['heartbeat_age_seconds'] > HEARTBEAT_STALE_SECONDS)
     return {'installed': True, 'process': heartbeat, 'families': families, 'attempts': attempts}
 
 
@@ -103,15 +125,18 @@ def main():
     print(f"Collection report {report['generated_at']}" + (f" (new since {report['since']})" if args.since else ''))
     for name, f in report['families'].items():
         extra = f", {f['observed_after_since']} after --since" if args.since else ''
-        print(f"  {name:16} {f['observations']:6} observations in {f['accounts']:3} accounts{extra}; "
+        bad = f", {f['unreadable_accounts']} UNREADABLE" if f['unreadable_accounts'] else ''
+        print(f"  {name:16} {f['observations']:6} observations in {f['accounts']:3} accounts{bad}{extra}; "
               f"latest bar {f['latest_bar']}; latest observed {f['latest_observed_at']}")
     c = report['collector']
     if not c['installed']:
-        print('  collector: no collector.sqlite3 yet (collector never ran with this runtime)')
+        print('  collector: ' + (f"collector.sqlite3 unreadable ({c['unreadable']})" if c.get('unreadable') else
+                                 'no collector.sqlite3 yet (collector never ran with this runtime)'))
         return
     p = c['process']
+    stale = ' STALE: status says running but the heartbeat stopped' if p.get('heartbeat_stale') else ''
     print(f"  collector pid {p.get('pid')} status {p.get('status')} started {p.get('started_at')} "
-          f"heartbeat {p.get('heartbeat_at')} ({p.get('heartbeat_age_seconds')} s ago) note {p.get('note')}")
+          f"heartbeat {p.get('heartbeat_at')} ({p.get('heartbeat_age_seconds')} s ago){stale} note {p.get('note')}")
     for f in c['families']:
         print(f"    {f['name']:11} last {f['last_outcome']} via {f['last_source']} at {f['last_attempt_at']}; "
               f"{f['checks']} checks, {f['new_observations']} new, failures {f['consecutive_failures']}; "

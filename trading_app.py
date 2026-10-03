@@ -13,6 +13,7 @@ import threading
 import time
 import webbrowser
 from urllib.parse import urlsplit, parse_qs
+import research_import.routes as research_routes
 from paper_book import PaperBook, PaperHold
 from trading_engine import signal_snapshot, DataUnavailable
 
@@ -34,7 +35,7 @@ def research_payload():
 
 
 class Controller:
-    def __init__(self, book, fetch=signal_snapshot, lab=None, desk=None, active=None, stocks=None):
+    def __init__(self, book, fetch=signal_snapshot, lab=None, desk=None, active=None, stocks=None, research=None):
         self.book, self.fetch = book, fetch
         self.lab = lab
         # Optional research companion. With desk=None every code path below is
@@ -42,6 +43,9 @@ class Controller:
         self.desk = desk
         self.active = active
         self.stocks = stocks
+        # Imported-research workflow (research_import). It is display and storage only and
+        # shares no object with the paper engine; None leaves every route below unchanged.
+        self.research = research
         # lock guards the core family (daily book, core benchmarks, research
         # helpers); hourly_lock guards the hourly lab and its market intake. The
         # background collector acquires these same locks, so a dashboard request
@@ -171,9 +175,29 @@ def make_server(controller, port=8791):
         def host_ok(self):
             return self.headers.get('Host') in {f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'}
 
+        def drain_body(self):
+            """Consume a refused research request's small body so the client reads the reply, not a reset."""
+            length=self.headers.get('Content-Length') or ''
+            research_routes.drain(self.rfile,int(length) if length.isdigit() else 0)
+
+        def research_read_ok(self):
+            """Imported research is private: loopback peer and Host, and never a cross-site fetch."""
+            return (self.host_ok() and self.client_address[0] in ('127.0.0.1', '::1')
+                    and self.headers.get('Sec-Fetch-Site', 'same-origin') in ('same-origin', 'none'))
+
+        def research_write_ok(self, allowed):
+            """Stricter than the paper routes: the Origin header must be present and this app's own."""
+            return (self.research_read_ok() and self.headers.get('Origin') in allowed
+                    and secrets.compare_digest((self.headers.get('X-Paper-Token') or '').encode('utf-8'), token.encode('utf-8')))
+
         def do_GET(self):
             if not self.host_ok():
                 return self.reply(403,{'error':'Local host required'})
+            route=urlsplit(self.path)
+            if research_routes.owns(route.path):
+                if not self.research_read_ok():
+                    return self.reply(403,{'error':'Local dashboard authorization required'})
+                return self.reply(*research_routes.handle_get(controller.research,route.path,route.query))
             if self.path == '/':
                 return self.reply(200,(ROOT/'trading_ui.html').read_text(encoding='utf-8').replace('__TOKEN__',token),'text/html')
             if self.path == '/api/stock-experiments':
@@ -227,19 +251,37 @@ def make_server(controller, port=8791):
         def do_POST(self):
             origin = self.headers.get('Origin')
             allowed = {f'http://127.0.0.1:{self.server.server_port}',f'http://localhost:{self.server.server_port}'}
-            if not self.host_ok() or (origin and origin not in allowed) or self.headers.get('X-Paper-Token') != token:
+            imported=research_routes.owns(self.path)
+            if (not self.host_ok() or (origin and origin not in allowed) or self.headers.get('X-Paper-Token') != token
+                    or (imported and not self.research_write_ok(allowed))):
+                if imported:
+                    self.drain_body()
                 return self.reply(403,{'error':'Local dashboard authorization required'})
+            if imported:
+                if self.path == research_routes.PREFIX+'/upload':
+                    # A bounded raw-body upload; a stalled client cannot hold the handler open.
+                    self.connection.settimeout(30)
+                    return self.reply(*research_routes.handle_upload(controller.research,self.headers,self.rfile))
             if self.headers.get('Content-Type') != 'application/json':
+                if imported:
+                    self.drain_body()
                 return self.reply(415,{'error':'JSON required'})
             try:
                 n = int(self.headers.get('Content-Length','0'))
-                if not 0 < n <= 1024:
-                    raise ValueError()
+            except ValueError:
+                n = 0
+            if not 0 < n <= (research_routes.MAX_JSON_BYTES if imported else 1024):
+                if imported:
+                    self.drain_body()   # not yet read: consume it so the client gets the 400
+                return self.reply(400,{'error':'Invalid request'})
+            try:
                 payload = json.loads(self.rfile.read(n))
                 if not isinstance(payload,dict):
                     raise ValueError()
             except (ValueError,TypeError):
                 return self.reply(400,{'error':'Invalid request'})
+            if research_routes.owns(self.path):
+                return self.reply(*research_routes.handle_post(controller.research,self.path,payload))
             if self.path == '/api/stock-cycle' and controller.stocks:
                 if controller.book.status()['paused']:
                     return self.reply(202,{'started':False})
@@ -313,6 +355,16 @@ class PaperServer(ThreadingHTTPServer):
         super().server_bind()
 
 
+def env_port(default=8791):
+    """TRADING_APP_PORT overrides the default port, so tests and trial runs never need the live one."""
+    raw=os.environ.get('TRADING_APP_PORT')
+    if raw is None:
+        return default
+    if not raw.isdigit() or not 0<=int(raw)<=65535:
+        raise SystemExit('TRADING_APP_PORT must be a port number from 0 to 65535')
+    return int(raw)
+
+
 def _log_to_files(runtime):
     """pythonw (the hidden scheduled launcher) has no console streams.
 
@@ -331,12 +383,14 @@ def _log_to_files(runtime):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--port',type=int,default=8791)
+    parser.add_argument('--port',type=int,default=env_port())
     parser.add_argument('--state',type=Path,default=ROOT/'runtime'/'paper.sqlite3')
     parser.add_argument('--no-browser',action='store_true')
     parser.add_argument('--once',action='store_true',help='Run one paper cycle without opening the dashboard')
     parser.add_argument('--no-research-helpers',action='store_true',
                         help='Run without the advisory research companion layer')
+    parser.add_argument('--no-research-import',action='store_true',
+                        help='Serve the dashboard without the imported-research workflow')
     parser.add_argument('--no-scheduler',action='store_true',
                         help='Serve the dashboard without background collection (manual checks only)')
     parser.add_argument('--restart-hung-after',type=float,default=0,metavar='MINUTES',
@@ -373,7 +427,11 @@ def main():
     stocks=StockExperiments(args.state.parent/'stock-experiments-v1')
     if book.status()['paused']:
         stocks.pause(True)
-    controller = Controller(book,lab=lab,desk=desk,active=active,stocks=stocks)
+    research=None
+    if not args.no_research_import:
+        from research_import import ResearchImports
+        research=ResearchImports(args.state.parent/'research-imports')
+    controller = Controller(book,lab=lab,desk=desk,active=active,stocks=stocks,research=research)
     try:
         server = make_server(controller,args.port)
     except OSError as exc:
