@@ -512,7 +512,8 @@ class ReadOnlyReport(CollectorCase):
         since = MONDAY - timedelta(seconds=1)
         counts = {name: report.family_report(runtime, patterns, since) for name, patterns in report.FAMILIES.items()}
         self.assertEqual({k: v['observed_after_since'] for k, v in counts.items()},
-                         {'core': 1, 'core benchmarks': 4, 'hourly': 3, 'active': 2, 'stocks_5m': 4, 'stocks_15m': 4})
+                         {'core': 1, 'core benchmarks': 4, 'core research shadows': 0,    # this fixture creates no shadow books
+                          'hourly': 3, 'active': 2, 'stocks_5m': 4, 'stocks_15m': 4})
         self.assertEqual(report.family_report(runtime, report.FAMILIES['core'], MONDAY)['observed_after_since'], 0)
         summary = report.collector_report(runtime, since)
         self.assertEqual({a['family'] for a in summary['attempts'] if a['outcome'] == 'new'},

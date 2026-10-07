@@ -6,13 +6,16 @@ evidence, makes no network request, forces no cycle and writes nothing. Pin
 
 It answers, for one window (default: first collector attempt to now):
   * which bars should have been recorded (bundled NYSE calendar, 24/7 crypto) and which were;
-  * per session, whether coverage was full, and which periods are excluded or gapped;
-  * why each gap happened: collector silent (asleep, off, process ended), provider/data
-    failure (held or error checks) or checks accepted without the bar appearing;
+  * per session, whether it was complete (closed and not clipped by either end of the window)
+    and fully recorded, with coverage so far reported separately for clipped and open periods;
+  * why each gap happened, judged on the missing bars' own readiness windows: no collector
+    attempt recorded, provider/data failure (held or error checks) or checks accepted without
+    the bar appearing. Machine sleep is never proven from these files;
   * held accounts, error reasons, recorded process interruptions and observation latency;
   * costs and exposure inside the window;
   * matched strategy/reference periods, compared only on bars both accounts recorded and
-    never across a gap.
+    never across a gap. The minimum-session gate counts complete sessions fully matched by
+    both accounts; observed and partial days are counted separately.
 
 It reports insufficient samples instead of a verdict. There is no annualised figure, no
 projection and no claim of profit. Meeting a sample threshold lets a difference be
@@ -42,19 +45,26 @@ from stock_experiments import NY, session_close_for   # noqa: E402
 UTC = timezone.utc
 # How long after a bar becomes collectable it may still be 'pending' rather than missed,
 # and how long after the bar's end the provider delay applies. Both mirror collector.py.
+# 'span' is how long a bar stays the latest completed bar (the collector records only that one),
+# so a bar's readiness window is [ready, ready + span). The core has no fixed span: its window
+# lasts until the next session's bar is ready.
 KINDS = {
-    'core': {'label': 'Core daily', 'delay': None, 'grace': 30, 'min_intervals': 20},
-    'hourly_listed': {'label': 'Hourly listed funds', 'delay': 5, 'grace': 10, 'min_intervals': 100},
-    'hourly_crypto': {'label': 'Hourly crypto', 'delay': 5, 'grace': 10, 'min_intervals': 100},
-    'active': {'label': 'Active 15m crypto', 'delay': 2, 'grace': 8, 'min_intervals': 500},
-    'stocks_5m': {'label': 'Stock labs 5m', 'delay': 2, 'grace': 5, 'min_intervals': 500},
-    'stocks_15m': {'label': 'Stock labs 15m', 'delay': 2, 'grace': 5, 'min_intervals': 200},
+    'core': {'label': 'Core daily', 'delay': None, 'grace': 30, 'min_intervals': 20, 'span': None},
+    'hourly_listed': {'label': 'Hourly listed funds', 'delay': 5, 'grace': 10, 'min_intervals': 100, 'span': 60},
+    'hourly_crypto': {'label': 'Hourly crypto', 'delay': 5, 'grace': 10, 'min_intervals': 100, 'span': 60},
+    'active': {'label': 'Active 15m crypto', 'delay': 2, 'grace': 8, 'min_intervals': 500, 'span': 15},
+    'stocks_5m': {'label': 'Stock labs 5m', 'delay': 2, 'grace': 5, 'min_intervals': 500, 'span': 5},
+    'stocks_15m': {'label': 'Stock labs 15m', 'delay': 2, 'grace': 5, 'min_intervals': 200, 'span': 15},
 }
 COLLECTOR_FAMILY = {'core': 'core', 'hourly_listed': 'hourly', 'hourly_crypto': 'hourly', 'active': 'active',
                     'stocks_5m': 'stocks_5m', 'stocks_15m': 'stocks_15m'}
-MIN_SESSIONS = 20            # distinct trading days (UTC days for 24/7 markets) before a comparison may be discussed
+MIN_SESSIONS = 20            # complete sessions (UTC days for 24/7 markets) fully matched by both accounts before a comparison may be discussed
 MIN_FILLS = 10              # completed fills by the strategy account in the window
 SILENCE_SLACK = timedelta(minutes=5)
+SILENT_BAR_SHARE = 0.5       # a missing bar counts as silent when at least this share of its window had no attempt
+SESSION_BASIS = 'complete_closed_sessions_matched_by_strategy_and_reference'
+SILENCE_CAUSE = ('no attempts recorded by any family: computer asleep or off, the server process not running, '
+                 'or the process suspended or stuck; these are not distinguishable from the databases')
 TOP = 3                      # message variants kept per gap or error group
 
 
@@ -139,6 +149,51 @@ def expected_bars(kind, start, until):
                 add(end.astimezone(UTC).isoformat(), end.astimezone(UTC), end.astimezone(UTC) + delay)
                 end += timedelta(minutes=minutes)
     return out
+
+
+def full_session(kind, day):
+    """[(label, ready_utc)] of every bar of one session, whatever the report window (calendar-driven).
+
+    Uses the same expected_bars rules, so holidays, 13:00 early closes and 24/7 UTC days
+    follow the bundled calendar rather than a count of weekdays.
+    """
+    begin = datetime.fromisoformat(day).replace(tzinfo=UTC)
+    return [(label, ready) for label, ready in expected_bars(kind, begin, begin + timedelta(days=3))
+            if session_of(kind, label) == day]
+
+
+def session_table(kind, expected, start, until):
+    """{session: info} for every session holding a bar the window expects.
+
+    A session is complete only when the window holds every bar of it: none before `start`
+    (start-clipped) and none still pending at `until` (end-clipped or open). Coverage inside a
+    clipped session is coverage so far, not completeness.
+    """
+    inside = {label for label, _ in expected}
+    due_by_day = {}
+    for label, _ in expected:
+        due_by_day.setdefault(session_of(kind, label), []).append(label)
+    table = {}
+    for day in sorted(due_by_day):
+        full = full_session(kind, day)
+        # The core's window edge is its ready time; every other bar's is the bar end itself.
+        edge = (lambda label, ready: ready) if kind == 'core' else (lambda label, ready: key_time(label))
+        outside = [(label, ready) for label, ready in full if label not in inside]
+        before = [label for label, ready in outside if edge(label, ready) < start]
+        after = [label for label, ready in outside if label not in before]
+        last = max((edge(label, ready) for label, ready in full), default=None)
+        # All bar labels can be due before the UTC day closes (23:00 hourly, 23:45 active).
+        # The sample gate requires a closed day as well as every label, so wait until midnight.
+        closes = (datetime.fromisoformat(day).replace(tzinfo=UTC) + timedelta(days=1)
+                  if kind in ('hourly_crypto', 'active') else last)
+        still_open = bool(closes and until < closes)
+        end_clipped = bool(after) or still_open
+        status = ('complete' if full and not outside and not still_open else
+                  'start_and_end_clipped' if before and end_clipped else 'start_clipped' if before else 'end_clipped')
+        table[day] = {'labels': [label for label, _ in full], 'due': due_by_day[day], 'status': status,
+                      'complete': status == 'complete', 'start_clipped': bool(before), 'end_clipped': end_clipped,
+                      'still_open_at_until': still_open}
+    return table
 
 
 def calendar_covered(start, until):
@@ -251,21 +306,26 @@ def read_holds(runtime):
 # --------------------------------------------------------- silence and errors
 
 def silent_periods(attempts, start, until):
-    """Stretches with no attempt from a family that should check every 5 minutes (30 when failing).
+    """Stretches with no attempt from any family, judged against the hourly family's 5-minute cadence
+    (30 minutes when it is failing).
 
-    The databases cannot tell sleep, shutdown and a crashed process apart; all three look
-    like silence. A check the collector recorded as interrupted names its own cause.
+    Every family's attempts count as evidence that the process was running, so another family's
+    check inside an hourly retry interval ends the silence. The databases still cannot tell sleep,
+    shutdown, a suspended or stuck process and a pause apart; all look like silence. A check the
+    collector recorded as interrupted names its own cause.
     """
     rows = sorted((a for a in attempts if start <= a['started'] <= until), key=lambda a: a['started'])
     interrupted = {a['started'] for a in rows if a['outcome'] == 'interrupted'}
     periods, failures, previous = [], 0, None
+    # Backoff comes from the hourly family when it is present; otherwise from whatever family recorded.
+    driver = 'hourly' if any(a['family'] == 'hourly' for a in rows) else None
 
     def allowed():
         return timedelta(seconds=_spacing(300, failures, 1800)) + SILENCE_SLACK
 
     def cause(begin):
         return ('process ended while a check was running (recorded as interrupted)' if begin in interrupted else
-                'no attempts: computer asleep or off, or the server process was not running')
+                SILENCE_CAUSE)
 
     for row in rows:
         if previous is None:
@@ -275,7 +335,8 @@ def silent_periods(attempts, start, until):
             resumed = Counter(a['outcome'] for a in rows if row['started'] <= a['started'] <= row['started'] + timedelta(seconds=90))
             periods.append({'from': previous, 'to': row['started'], 'cause': cause(previous),
                             'outcomes_on_resume': dict(resumed)})
-        failures = failures + 1 if row['outcome'] in FAILURE else 0 if row['outcome'] in SUCCESS else failures
+        if driver is None or row['family'] == driver:
+            failures = failures + 1 if row['outcome'] in FAILURE else 0 if row['outcome'] in SUCCESS else failures
         previous = row['started']
     if previous is not None and until - previous > allowed():
         periods.append({'from': previous, 'to': until, 'cause': cause(previous) + '; still silent at the end of the window'})
@@ -304,27 +365,100 @@ def attempt_summary(attempts, start, until):
 
 # ------------------------------------------------------------------ coverage
 
-def attribute_gap(attempts, silent, begin, end):
-    """Why bars were missed between two instants, from what the collector recorded then."""
-    failed = [a for a in attempts if begin <= a['started'] <= end and a['outcome'] in FAILURE]
-    accepted = [a for a in attempts if begin <= a['started'] <= end and a['outcome'] in SUCCESS]
-    quiet = [p for p in silent if p['from'] < end and p['to'] > begin]
-    causes = []
-    if quiet:
+def missing_windows(kind, run, ready, order, until):
+    """[(begin, end)] during which each missing bar was the latest completed bar and could have been recorded.
+
+    The collector only records the latest completed bar, so a bar missing means no accepted check
+    ran in [ready, ready + span) (core: until the next session's bar is ready), cut at `until`.
+    """
+    position = {label: i for i, label in enumerate(order)}
+    span = KINDS[kind]['span']
+    windows = []
+    for label in run:
+        begin = ready[label]
+        following = order[position[label] + 1] if position[label] + 1 < len(order) else None
+        end = begin + timedelta(minutes=span) if span else (ready[following] if following else until)
+        if span and following and begin < ready[following] < end:
+            end = ready[following]
+        if kind in ('stocks_5m', 'stocks_15m'):
+            # stock_due() follows session_open(): collection stops five minutes after the
+            # exchange close, even when the final bar would remain latest for longer.
+            local_day = key_time(label).astimezone(NY).date()
+            close = session_close_for(local_day)
+            if close:
+                cutoff = (datetime.combine(local_day, close, tzinfo=NY) + timedelta(minutes=5)).astimezone(UTC)
+                end = min(end, cutoff)
+        windows.append((begin, min(end, until)))
+    return windows
+
+
+def overlap_seconds(begin, end, periods):
+    return sum(max(0.0, (min(end, p['to']) - max(begin, p['from'])).total_seconds()) for p in periods)
+
+
+INTERPRETATION = {
+    'collector_silent': ("No collector attempt was recorded in these bars' readiness windows. Machine sleep or shutdown, "
+                         'a suspended or stuck process and a pause cannot be told apart from these files.'),
+    'provider_or_data_failure': ("Checks ran in these bars' readiness windows but the provider or data was rejected or "
+                                 'errored; see top_messages.'),
+    'checks_accepted_without_bar': "Checks inside these bars' readiness windows were accepted but the bar did not appear.",
+    'no_attempt_recorded': ("No attempt from this family was recorded in these bars' readiness windows; "
+                             'the available files do not establish why or whether other collector activity occurred.'),
+}
+
+
+def attribute_gap(attempts, silent, windows, recovery_to=None):
+    """Why bars were missed, from what the collector recorded inside each missing bar's own window.
+
+    A check that ran after the last missing bar's window (the recovery check that finally recorded
+    the next bar) and a silence that only overlaps the recovery interval are not causes of the
+    missing bars; the recovery checks are counted separately.
+    """
+    def inside(when, window):
+        return window[0] <= when < window[1]
+
+    def within(when):
+        return any(inside(when, w) for w in windows)
+
+    failed = [a for a in attempts if a['outcome'] in FAILURE and within(a['started'])]
+    accepted = [a for a in attempts if a['outcome'] in SUCCESS and within(a['started'])]
+    last = max(end for _, end in windows)
+    recovery = [a for a in attempts if a['outcome'] in SUCCESS and recovery_to is not None and last <= a['started'] <= recovery_to]
+    quiet = [p for p in silent if any(overlap_seconds(b, e, [p]) > 0 for b, e in windows)]
+    per_bar = []
+    for window in windows:
+        length = (window[1] - window[0]).total_seconds()
+        share = overlap_seconds(window[0], window[1], quiet)
+        if length and share >= SILENT_BAR_SHARE * length:
+            per_bar.append('collector_silent')
+        elif any(inside(a['started'], window) for a in failed):
+            per_bar.append('provider_or_data_failure')
+        elif any(inside(a['started'], window) for a in accepted):
+            per_bar.append('checks_accepted_without_bar')
+        elif share > 0:
+            per_bar.append('collector_silent')
+        else:
+            per_bar.append('no_attempt_recorded')
+    counts = Counter(per_bar)
+    priority = list(INTERPRETATION)
+    causes = sorted(counts, key=lambda c: (-counts[c], priority.index(c)))
+    if failed and 'provider_or_data_failure' not in causes:
+        causes.append('provider_or_data_failure')      # visible even when it is not the main cause
+    if quiet and 'collector_silent' not in causes:
         causes.append('collector_silent')
-    if failed:
-        causes.append('provider_or_data_failure')
-    if accepted and not failed and not quiet:
-        causes.append('checks_accepted_without_bar')
-    if not causes:
-        causes.append('no_attempt_recorded')
-    return {'primary': causes[0], 'causes': causes,
+    silent_minutes = sum(overlap_seconds(b, e, quiet) for b, e in windows) / 60
+    interpretation = ' '.join(INTERPRETATION[c] for c in causes)
+    if any(p['cause'].startswith('process ended') for p in quiet):
+        interpretation += ' A check recorded as interrupted shows the process ended mid-check.'
+    return {'primary': causes[0], 'causes': causes, 'bar_causes': dict(counts),
             'failed_checks': dict(Counter(a['outcome'] for a in failed)), 'accepted_checks': len(accepted),
+            'recovery_checks': len(recovery), 'missing_window_to': iso(last),
+            'silent_overlap_minutes': round(silent_minutes, 1),
             'silent_periods': [{'from': iso(p['from']), 'to': iso(p['to']), 'cause': p['cause']} for p in quiet],
-            'top_messages': group_messages(failed)}
+            'top_messages': group_messages(failed), 'interpretation': interpretation}
 
 
-def family_coverage(kind, accounts, data, expected, silent, attempts, start, until):
+def family_coverage(kind, accounts, data, expected, silent, attempts, start, until, table=None):
     """Family-level coverage: a bar counts as recorded if any account of the family recorded it."""
     labels = [label for label, _ in expected]
     ready = dict(expected)
@@ -336,14 +470,23 @@ def family_coverage(kind, accounts, data, expected, silent, attempts, start, unt
                 recorded[o['asof']] = min(first, o['observed_at']) if first else o['observed_at']
     got = [label for label in labels if label in recorded]
     missing = [label for label in labels if label not in recorded]
+    table = table or session_table(kind, expected, start, until)
     sessions = []
-    for day in sorted({session_of(kind, label) for label in labels}):
-        due = [label for label in labels if session_of(kind, label) == day]
+    for day, info in table.items():
+        due = info['due']
         have = [label for label in due if label in recorded]
-        sessions.append({'session': day, 'expected': len(due), 'recorded': len(have), 'missing': len(due) - len(have),
-                         'coverage_pct': round(100 * len(have) / len(due), 1), 'full': len(have) == len(due),
-                         # The window opened during this session, so its earlier bars are excluded, not missed.
-                         'clipped_by_window_start': session_of(kind, iso(start)) == day})
+        sessions.append({'session': day,
+                         # expected/recorded/missing/coverage_pct are coverage so far: bars the window expects of this session.
+                         'expected': len(due), 'recorded': len(have), 'missing': len(due) - len(have),
+                         'coverage_pct': round(100 * len(have) / len(due), 1),
+                         # full: a complete session (closed, not clipped) with every bar recorded.
+                         'full': info['complete'] and len(have) == len(due),
+                         'complete': info['complete'], 'status': info['status'],
+                         'full_session_bars': len(info['labels']),
+                         'covered_so_far_full': len(have) == len(due),
+                         # Bars before the window start are excluded, not missed; bars still pending at the end are not due yet.
+                         'clipped_by_window_start': info['start_clipped'], 'clipped_by_window_end': info['end_clipped'],
+                         'still_open_at_until': info['still_open_at_until']})
     gaps, run = [], []
     order = sorted(labels, key=key_time)
     for index, label in enumerate(order + [None]):
@@ -355,9 +498,12 @@ def family_coverage(kind, accounts, data, expected, silent, attempts, start, unt
             following = order[last + 1] if last + 1 < len(order) else None
             begin = ready[run[0]]
             finish = recorded[following] if following else until
-            why = attribute_gap(attempts, silent, begin, finish)
+            windows = missing_windows(kind, run, ready, order, until)
+            why = attribute_gap(attempts, silent, windows, recorded[following] if following else None)
+            # window_to still runs through the recovery observation; missing_window_to ends with the missing bars' own windows.
             gaps.append({'from_bar': run[0], 'to_bar': run[-1], 'missing_bars': len(run), 'sessions': sorted({session_of(kind, x) for x in run}),
-                         'window_from': iso(begin), 'window_to': iso(finish), 'recovered_with': following, **why})
+                         'window_from': iso(begin), 'window_to': iso(finish), 'recovered_with': following,
+                         'recovery_observed_at': iso(recorded[following]) if following else None, **why})
             run = []
     lag = [(recorded[l] - ready[l]).total_seconds() / 60 for l in got]
     late = [x for x in lag if x > KINDS[kind]['grace']]
@@ -366,7 +512,12 @@ def family_coverage(kind, accounts, data, expected, silent, attempts, start, unt
     return {'kind': kind, 'label': KINDS[kind]['label'], 'accounts': len(accounts), 'expected_bars': len(labels),
             'recorded_bars': len(got), 'missing_bars': len(missing),
             'coverage_pct': round(100 * len(got) / len(labels), 1) if labels else None,
-            'sessions': sessions, 'full_sessions': sum(1 for s in sessions if s['full']), 'gaps': gaps,
+            'sessions': sessions, 'full_sessions': sum(1 for s in sessions if s['full']),
+            'complete_sessions': sum(1 for s in sessions if s['complete']),
+            'partial_sessions': sum(1 for s in sessions if not s['complete']),
+            'sessions_note': ('full_sessions counts complete (closed, unclipped) sessions with every bar recorded; start-clipped, '
+                              'end-clipped and still-open sessions are partial and report coverage so far only.'),
+            'gaps': gaps,
             'observation_latency_minutes': ({'median': round(statistics.median(lag), 1), 'max': round(max(lag), 1),
                                              'late_count': len(late), 'late_threshold': KINDS[kind]['grace']} if lag else None),
             'late_bars': [{'bar': l, 'minutes_after_ready': round(x, 1)} for l, x in zip(got, lag)
@@ -397,13 +548,18 @@ def economics(info, start, until):
             'max_exposure_pct': round(100 * max(exposure), 1) if exposure else None}
 
 
-def compare(kind, strategy, reference, data, expected, start, until):
-    """Strategy against its reference on bars both recorded, never across a gap."""
+def compare(kind, strategy, reference, data, expected, start, until, table=None):
+    """Strategy against its reference on bars both recorded, never across a gap.
+
+    The minimum-session gate counts complete sessions in which every bar was recorded by both
+    accounts. Days with any matched bar are still counted, but only as observed sessions.
+    """
     def window(acct):
         return {o['asof']: o['equity'] for o in data[acct['id']]['observations']
                 if o['observed_at'] and start <= o['observed_at'] <= until}
     mine, theirs = window(strategy), window(reference)
     common = sorted(set(mine) & set(theirs), key=key_time)
+    common_set = set(common)
     order = sorted({label for label, _ in expected} | set(mine) | set(theirs), key=key_time)
     position = {label: i for i, label in enumerate(order)}
     segments, current = [], []
@@ -422,17 +578,35 @@ def compare(kind, strategy, reference, data, expected, start, until):
                 value *= equity[seg[-1]] / equity[seg[0]]
         return round(100 * (value - 1), 3)
 
+    table = table if table is not None else session_table(kind, expected, start, until)
     intervals = sum(len(s) - 1 for s in segments)
-    sessions = len({session_of(kind, label) for label in common})
+    observed = sorted({session_of(kind, label) for label in common})
+    eligible = [day for day in observed if day in table and table[day]['complete']
+                and all(label in common_set for label in table[day]['labels'])]
     fills = economics(data[strategy['id']], start, until)['fills']
     need = {'sessions': MIN_SESSIONS, 'intervals': KINDS[kind]['min_intervals'], 'fills': MIN_FILLS}
-    have = {'sessions': sessions, 'intervals': intervals, 'fills': fills}
-    short = [f'{name} {have[name]}/{need[name]}' for name in need if have[name] < need[name]]
+    have = {'sessions': len(eligible), 'intervals': intervals, 'fills': fills, 'observed_sessions': len(observed)}
+    short = []
+    for name in need:
+        if have[name] >= need[name]:
+            continue
+        if name == 'sessions':
+            short.append(f"sessions {have[name]}/{need[name]} complete fully matched "
+                         f"({len(observed)} observed, {len(observed) - len(eligible)} partial or not fully matched)")
+        else:
+            short.append(f'{name} {have[name]}/{need[name]}')
     result = {'pair': strategy['pair'], 'kind': kind, 'strategy': strategy['id'], 'reference': reference['id'],
-              'matched_bars': len(common), 'segments': len(segments), 'return_intervals': intervals, 'sessions': sessions,
+              'matched_bars': len(common), 'segments': len(segments), 'return_intervals': intervals,
+              # `sessions` keeps its old meaning (days with at least one matched bar); the gate uses the complete count below.
+              'sessions': len(observed), 'observed_sessions': len(observed),
+              'complete_matched_sessions': len(eligible), 'partial_matched_sessions': len(observed) - len(eligible),
+              'eligible_session_dates': eligible,
               'strategy_only_bars': len(set(mine) - set(theirs)), 'reference_only_bars': len(set(theirs) - set(mine)),
               'need': need, 'have': have,
+              'sessions_basis': SESSION_BASIS,
               'fills_basis': 'whole_window (the sample gate counts all fills in the window, not only fills inside matched intervals)',
+              'gate_basis': {'sessions': SESSION_BASIS, 'intervals': 'matched_contiguous_runs',
+                             'fills': 'whole_window_fills_by_the_strategy_account'},
               'return_basis': 'matched_contiguous_runs_only',
               'verdict': 'insufficient_sample' if short else 'sample_thresholds_met_descriptive_only',
               'insufficient_because': short}
@@ -464,12 +638,13 @@ def build(runtime, since=None, until=None, now=None):
     data = {a['id']: load_account(a) for a in accounts}
     holds = read_holds(runtime)
     covered = calendar_covered(start, until)
-    hourly = [a for a in attempts if a['family'] == 'hourly'] or attempts
-    silent = silent_periods(hourly, start, until)
+    silent = silent_periods(attempts, start, until)
     in_window = [a for a in attempts if start <= a['started'] <= until]
     retained_from = min((a['started'] for a in attempts), default=None)
     notes = ['Window is [since, until]. Bars that completed before `since` are excluded; bars still inside their grace period at `until` are pending, not missed.',
-             'Silence is inferred from missing collector attempts. The databases cannot distinguish sleep, shutdown, a crashed process and a global pause.',
+             'Silence is inferred from missing collector attempts of every family. The databases cannot distinguish sleep, shutdown, a suspended or stuck process and a global pause, so no gap is attributed to a proven machine state.',
+             'Gap causes are judged on the readiness window of each missing bar; a recovery check or a silence that only overlaps the recovery interval is not a cause of the missing bars.',
+             'A session is complete only if the window holds all of its bars: start-clipped, end-clipped and still-open sessions are partial and show coverage so far. The minimum-session gate counts complete sessions fully matched by both accounts.',
              'No bar is ever backfilled, so a missed bar stays missed; comparisons use only bars both accounts recorded and never span a gap.',
              'Returns are descriptive and unannualised. Sample thresholds gate discussion only; they are not evidence of an edge. Nothing here is a projection.']
     if not covered:
@@ -478,14 +653,17 @@ def build(runtime, since=None, until=None, now=None):
         notes.append('collector.sqlite3 keeps only the latest 5,000 attempts; earlier failures in a long window may be missing.')
     if retained_from and retained_from > start:
         notes.append(f'The attempt log starts {iso(retained_from)}, after the window start; earlier causes cannot be attributed.')
-    families, expected_by = {}, {}
+    if not in_window:
+        notes.append('No collector attempts are available inside this window. Missing attempt evidence does not establish another family was active, or prove sleep, shutdown or a provider failure.')
+    families, expected_by, tables = {}, {}, {}
     for kind in KINDS:
         members = [a for a in accounts if a['kind'] == kind]
         if not members:
             continue
         expected_by[kind] = expected_bars(kind, start, until) if kind in ('hourly_crypto', 'active') or covered else []
         fam_attempts = [a for a in attempts if a['family'] == COLLECTOR_FAMILY[kind]]
-        cov = family_coverage(kind, members, data, expected_by[kind], silent, fam_attempts, start, until)
+        tables[kind] = session_table(kind, expected_by[kind], start, until)
+        cov = family_coverage(kind, members, data, expected_by[kind], silent, fam_attempts, start, until, tables[kind])
         # Accounts that recorded fewer expected bars than the family as a whole.
         recorded_labels = {label for label, _ in expected_by[kind]}
         per_account = []
@@ -509,7 +687,7 @@ def build(runtime, since=None, until=None, now=None):
         refs = [a for a in members if a['role'] == 'reference']
         for strategy in (a for a in members if a['role'] == 'strategy'):
             for ref in refs:
-                comparisons.append(compare(kind, strategy, ref, data, expected_by.get(kind, []), start, until))
+                comparisons.append(compare(kind, strategy, ref, data, expected_by.get(kind, []), start, until, tables.get(kind)))
     excluded = [{'kind': 'before_window', 'until': iso(start),
                  'detail': 'Everything recorded or completed before the window start: earlier manual and pre-deployment runs.',
                  'observations_excluded': {k: v['observed_before_window_excluded'] for k, v in families.items()}}]
@@ -576,13 +754,15 @@ def render(report, gap_limit=8):
     for kind, f in report['families'].items():
         pct = 'n/a' if f['coverage_pct'] is None else f"{f['coverage_pct']}%"
         lines.append(f"  {f['label']:22} {f['recorded_bars']:5}/{f['expected_bars']:<5} bars recorded = {pct:6} "
-                     f"{f['full_sessions']}/{len(f['sessions'])} sessions full, {len(f['gaps'])} gap(s), {f['accounts']} accounts")
+                     f"{f['complete_sessions']} complete / {f['partial_sessions']} partial sessions ({f['full_sessions']} full), "
+                     f"{len(f['gaps'])} gap(s), {f['accounts']} accounts")
         lat = f['observation_latency_minutes']
         if lat:
             lines.append(f"      latency after ready: median {lat['median']} min, max {lat['max']} min, {lat['late_count']} later than {lat['late_threshold']} min")
         for s in f['sessions']:
             if not s['full']:
-                lines.append(f"      session {s['session']}: {s['recorded']}/{s['expected']} ({s['coverage_pct']}%)")
+                note = '' if s['complete'] else f" {s['status']}: coverage so far, the session has {s['full_session_bars']} bars"
+                lines.append(f"      session {s['session']}: {s['recorded']}/{s['expected']} ({s['coverage_pct']}%){note}")
         for g in f['gaps'][:gap_limit]:
             lines.append(f"      GAP {g['missing_bars']} bar(s) {short_time(g['from_bar'] if len(g['from_bar']) > 10 else g['from_bar'] + 'T00:00')}"
                          f" .. {short_time(g['to_bar'] if len(g['to_bar']) > 10 else g['to_bar'] + 'T00:00')}: {', '.join(g['causes'])}"
@@ -609,7 +789,7 @@ def render(report, gap_limit=8):
         lines.append(f"  {f['label']:22} {fills:4} fills, ${fees:,.2f} fees; mean exposure by account "
                      f"{min(exposures):.0f}%..{max(exposures):.0f}%" if exposures else f"  {f['label']:22} no observations")
     lines += ['', 'MATCHED STRATEGY / REFERENCE PERIODS (returns use matched bars only, gaps excluded; descriptive, unannualised; '
-              'fill counts in the sample gate are whole-window)']
+              'the session gate counts complete sessions fully matched by both accounts; fill counts in the sample gate are whole-window)']
     s = report['summary']
     lines.append(f"  {s['comparisons']} comparisons: {s['insufficient_sample']} insufficient sample, "
                  f"{s['thresholds_met']} meet the sample thresholds (still not evidence of an edge)")
@@ -620,7 +800,8 @@ def render(report, gap_limit=8):
             continue
         diff = '' if c['descriptive_difference_pp'] is None else f" [descriptive {c['descriptive_difference_pp']:+.2f} pp]"
         lines.append(f"  {c['strategy']:30} vs {c['reference']:22} {c['matched_bars']:4} matched bars, {c['segments']} run(s), "
-                     f"{c['verdict'].upper()}: {'; '.join(c['insufficient_because']) or 'thresholds met'}{diff}")
+                     f"{c['verdict'].upper()}: {'; '.join(c['insufficient_because']) or 'thresholds met'}; "
+                     f"complete matched sessions {c['complete_matched_sessions']} (observed {c['observed_sessions']}){diff}")
     for kind, n in shown.items():
         if n > 6:
             lines.append(f"  ... {n - 6} more {kind} comparisons (see --json)")

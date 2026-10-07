@@ -67,9 +67,9 @@ class Runtime:
             t += timedelta(minutes=step)
 
 
-def bars_15m(skip=()):
-    """Bar ends (UTC) the 15-minute stock lab should record between START and UNTIL."""
-    return [label for label, _ in cov.expected_bars('stocks_15m', START, UNTIL) if label not in skip]
+def bars_15m(skip=(), since=None):
+    """Bar ends (UTC) the 15-minute stock lab should record between START (or `since`) and UNTIL."""
+    return [label for label, _ in cov.expected_bars('stocks_15m', since or START, UNTIL) if label not in skip]
 
 
 def stock_obs(labels, equity=25000.0, seen_after=2):
@@ -130,7 +130,11 @@ class CoverageAndGaps(unittest.TestCase):
         fam = self.build()['families']['stocks_15m']
         self.assertEqual((fam['expected_bars'], fam['missing_bars'], fam['coverage_pct']), (25, 0, 100.0))
         self.assertEqual(fam['gaps'], [])
-        self.assertEqual(fam['full_sessions'], 1)
+        # START (10:00 ET) opens the window mid-session: every due bar is recorded, but the session is only
+        # clipped coverage so far, not a complete session (see test_coverage_semantics for complete sessions).
+        self.assertEqual((fam['full_sessions'], fam['complete_sessions'], fam['partial_sessions']), (0, 0, 1))
+        self.assertEqual(fam['sessions'][0]['status'], 'start_clipped')
+        self.assertTrue(fam['sessions'][0]['covered_so_far_full'])
         self.assertEqual(self.build()['process']['silent_periods'], [])
 
     def test_missing_bars_are_attributed_to_provider_failure(self):
@@ -308,14 +312,14 @@ class MatchedComparison(unittest.TestCase):
         self.addCleanup(self.dir.cleanup)
         self.rt = Runtime(self.dir.name)
 
-    def pair(self, strategy_equity, reference_equity):
-        labels = bars_15m()
+    def pair(self, strategy_equity, reference_equity, since=START):
+        labels = bars_15m(since=since)
         def obs(values):
             return [(l, cov.utc(l) + timedelta(minutes=2), v, v) for l, v in zip(labels, values) if v is not None]
         self.rt.book('stock-experiments-v1/stock-lab-v1-trend_15m.sqlite', obs(strategy_equity))
         self.rt.book('stock-experiments-v1/stock-lab-v1-buy_hold_15m.sqlite', obs(reference_equity))
         self.rt.heartbeat()
-        comparisons = cov.build(self.rt.root, since=START, until=UNTIL, now=UNTIL)['comparisons']
+        comparisons = cov.build(self.rt.root, since=since, until=UNTIL, now=UNTIL)['comparisons']
         self.assertEqual(len(comparisons), 1)
         return comparisons[0]
 
@@ -334,14 +338,17 @@ class MatchedComparison(unittest.TestCase):
         result = self.pair([100 + i for i in range(25)], [100] * 25)
         self.assertEqual(result['verdict'], 'insufficient_sample')
         reasons = ' '.join(result['insufficient_because'])
-        self.assertIn('sessions 1/20', reasons)
+        self.assertIn('sessions 0/20', reasons)           # the only session is clipped by START, so it is observed but not complete
+        self.assertIn('1 observed', reasons)
         self.assertIn('intervals 24/200', reasons)
         self.assertIn('fills 0/10', reasons)
 
     def test_meeting_thresholds_still_is_not_a_performance_claim(self):
         with patch.object(cov, 'MIN_SESSIONS', 1), patch.object(cov, 'MIN_FILLS', 0), \
                 patch.dict(cov.KINDS['stocks_15m'], {'min_intervals': 10}):
-            result = self.pair([100 + i for i in range(25)], [100] * 25)
+            # A window opening at 09:00 ET holds the whole 26-bar session, so it can count toward the gate.
+            result = self.pair([100 + i for i in range(26)], [100] * 26, since=datetime(2026, 9, 21, 13, 0, tzinfo=UTC))
+        self.assertEqual(result['complete_matched_sessions'], 1)
         self.assertEqual(result['verdict'], 'sample_thresholds_met_descriptive_only')
         self.assertEqual(result['insufficient_because'], [])
 
