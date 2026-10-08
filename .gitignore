@@ -22,3 +22,7 @@ pit_run*.log
 /runtime/research-imports/
 
 reference/
+
+# Worker logs, manifests, reports and private paper analysis: never part of a source release
+/worker-private/
+/review-input/

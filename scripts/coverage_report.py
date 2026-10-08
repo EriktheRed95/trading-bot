@@ -66,6 +66,13 @@ SESSION_BASIS = 'complete_closed_sessions_matched_by_strategy_and_reference'
 SILENCE_CAUSE = ('no attempts recorded by any family: computer asleep or off, the server process not running, '
                  'or the process suspended or stuck; these are not distinguishable from the databases')
 TOP = 3                      # message variants kept per gap or error group
+# What a stored failure message can establish, strongest first. The collector keeps the exception class
+# name only (never a traceback), so an exception such as TypeError cannot be blamed on the provider.
+FAILURE_CLASSES = ('network_error', 'data_rejected', 'unclassified')
+# Generic OSError is deliberately absent: it also covers local file and device faults, and a stored class name alone cannot say which.
+NETWORK_ERROR_NAME = re.compile(r'Connection|Timeout|URLError|SSL|HTTPError|gaierror|ProxyError')
+DATA_REJECTED_MESSAGE = re.compile(r'PaperHold|DataUnavailable|^Held\b|held or queued asset|Provider returned')
+MARKET_CLOSED_HOLD = re.compile(r'market closed|stale', re.I)
 
 
 def utc(stamp):
@@ -295,12 +302,26 @@ def process_evidence(runtime):
                                   'last': iso(max(refusals, default=None))}}
 
 
-def read_holds(runtime):
+def read_holds(runtime, until=None):
+    """Hourly lab quality holds. quality.json is the live file, not a record as of `until`.
+
+    Most holds outside a regular session only say the market is closed or the data stale; those are
+    kept apart from readiness holds, which name a reason an account cannot start.
+    """
     try:
         data = json.loads((runtime / 'hourly-v1' / 'quality.json').read_text(encoding='utf-8'))
-        return {'observed_at': data.get('observed_at'), 'holds': dict(data.get('holds') or {})}
+        holds = dict(data.get('holds') or {})
+        try:
+            seen = utc(data.get('observed_at'))
+        except (ValueError, TypeError):
+            seen = None                      # an unreadable time must not hide the holds themselves
+        return {'observed_at': data.get('observed_at'), 'holds': holds,
+                'observed_after_window_end': bool(until and seen and seen > until),
+                'readiness_holds': {k: v for k, v in holds.items() if not MARKET_CLOSED_HOLD.search(str(v))},
+                'market_closed_or_stale': sorted(k for k, v in holds.items() if MARKET_CLOSED_HOLD.search(str(v)))}
     except (OSError, ValueError, AttributeError):
-        return {'observed_at': None, 'holds': {}}
+        return {'observed_at': None, 'holds': {}, 'observed_after_window_end': False,
+                'readiness_holds': {}, 'market_closed_or_stale': []}
 
 
 # --------------------------------------------------------- silence and errors
@@ -345,6 +366,16 @@ def silent_periods(attempts, start, until):
     return periods
 
 
+def failure_class(message):
+    """network_error, data_rejected or unclassified, judged only from what the stored message says."""
+    named = re.search(r'\((\w+)\)', message or '')
+    if named and NETWORK_ERROR_NAME.search(named.group(1)):
+        return 'network_error'
+    if DATA_REJECTED_MESSAGE.search(message or ''):
+        return 'data_rejected'
+    return 'unclassified'
+
+
 def group_messages(rows, limit=TOP):
     counts = Counter(re.sub(r'\d{4}-\d\d-\d\dT[\d:.+\-]+', '<time>', r['message'])[:160] for r in rows)
     return [{'message': m, 'count': n} for m, n in counts.most_common(limit)]
@@ -357,7 +388,11 @@ def attempt_summary(attempts, start, until):
         rows = [a for a in inside if a['family'] == family]
         outcomes = Counter(a['outcome'] for a in rows)
         failed = [a for a in rows if a['outcome'] in FAILURE or a['outcome'] == 'interrupted']
+        # Class totals come from every raw failed attempt (error or held; interrupted checks are not failures of the data), counted
+        # before `reasons` normalises, shortens and caps its display list, so a seventh distinct reason is never dropped from them.
+        by_class = Counter(failure_class(a['message']) for a in rows if a['outcome'] in FAILURE)
         by_family[family] = {'checks': len(rows), 'outcomes': dict(outcomes), 'reasons': group_messages(failed, 6),
+                             'failed_checks_by_class': dict(by_class),
                              'first_failure': iso(min((a['started'] for a in failed), default=None)),
                              'last_failure': iso(max((a['started'] for a in failed), default=None))}
     return by_family
@@ -399,8 +434,8 @@ def overlap_seconds(begin, end, periods):
 INTERPRETATION = {
     'collector_silent': ("No collector attempt was recorded in these bars' readiness windows. Machine sleep or shutdown, "
                          'a suspended or stuck process and a pause cannot be told apart from these files.'),
-    'provider_or_data_failure': ("Checks ran in these bars' readiness windows but the provider or data was rejected or "
-                                 'errored; see top_messages.'),
+    'provider_or_data_failure': ("Checks ran in these bars' readiness windows but were rejected or errored; see top_messages "
+                                 'and failure_classes for what the stored messages establish.'),
     'checks_accepted_without_bar': "Checks inside these bars' readiness windows were accepted but the bar did not appear.",
     'no_attempt_recorded': ("No attempt from this family was recorded in these bars' readiness windows; "
                              'the available files do not establish why or whether other collector activity occurred.'),
@@ -425,7 +460,7 @@ def attribute_gap(attempts, silent, windows, recovery_to=None):
     last = max(end for _, end in windows)
     recovery = [a for a in attempts if a['outcome'] in SUCCESS and recovery_to is not None and last <= a['started'] <= recovery_to]
     quiet = [p for p in silent if any(overlap_seconds(b, e, [p]) > 0 for b, e in windows)]
-    per_bar = []
+    per_bar, bar_classes = [], Counter()
     for window in windows:
         length = (window[1] - window[0]).total_seconds()
         share = overlap_seconds(window[0], window[1], quiet)
@@ -433,6 +468,8 @@ def attribute_gap(attempts, silent, windows, recovery_to=None):
             per_bar.append('collector_silent')
         elif any(inside(a['started'], window) for a in failed):
             per_bar.append('provider_or_data_failure')
+            found = {failure_class(a['message']) for a in failed if inside(a['started'], window)}
+            bar_classes[next(c for c in FAILURE_CLASSES if c in found)] += 1
         elif any(inside(a['started'], window) for a in accepted):
             per_bar.append('checks_accepted_without_bar')
         elif share > 0:
@@ -450,7 +487,13 @@ def attribute_gap(attempts, silent, windows, recovery_to=None):
     interpretation = ' '.join(INTERPRETATION[c] for c in causes)
     if any(p['cause'].startswith('process ended') for p in quiet):
         interpretation += ' A check recorded as interrupted shows the process ended mid-check.'
+    classes = Counter(failure_class(a['message']) for a in failed)
+    if classes.get('unclassified'):
+        interpretation += (' Failures stored only as an exception class (for example TypeError) are not established '
+                           'as provider faults: no traceback is kept.')
     return {'primary': causes[0], 'causes': causes, 'bar_causes': dict(counts),
+            # Checks by what their stored message establishes, and the bars blamed on a failure by their strongest class.
+            'failure_classes': dict(classes), 'bar_failure_classes': dict(bar_classes),
             'failed_checks': dict(Counter(a['outcome'] for a in failed)), 'accepted_checks': len(accepted),
             'recovery_checks': len(recovery), 'missing_window_to': iso(last),
             'silent_overlap_minutes': round(silent_minutes, 1),
@@ -595,7 +638,17 @@ def compare(kind, strategy, reference, data, expected, start, until, table=None)
                          f"({len(observed)} observed, {len(observed) - len(eligible)} partial or not fully matched)")
         else:
             short.append(f'{name} {have[name]}/{need[name]}')
+    # Sessions the window has not finished (open, or with bars still pending at `until`) and not clipped at the start:
+    # they can still become complete, so a progress view needs what is already matched in them.
+    pending = [{'session': day, 'bars_in_session': len(info['labels']), 'due_bars': len(info['due']),
+                'matched_due_bars': sum(1 for label in info['due'] if label in common_set),
+                'matched_so_far_in_full': all(label in common_set for label in info['due'])}
+               for day, info in table.items() if info['end_clipped'] and not info['start_clipped']]
     result = {'pair': strategy['pair'], 'kind': kind, 'strategy': strategy['id'], 'reference': reference['id'],
+              'pending_sessions': pending,
+              # True when the last matched bar is the last bar the window expects: the next matched bar then extends the run and adds a
+              # return interval. After a missed trailing bar it is a new anchor and adds none.
+              'continues_at_pin': bool(common) and common[-1] == order[-1],
               'matched_bars': len(common), 'segments': len(segments), 'return_intervals': intervals,
               # `sessions` keeps its old meaning (days with at least one matched bar); the gate uses the complete count below.
               'sessions': len(observed), 'observed_sessions': len(observed),
@@ -636,7 +689,7 @@ def build(runtime, since=None, until=None, now=None):
         raise SystemExit('--since is after --until.')
     accounts = discover(runtime)
     data = {a['id']: load_account(a) for a in accounts}
-    holds = read_holds(runtime)
+    holds = read_holds(runtime, until)
     covered = calendar_covered(start, until)
     silent = silent_periods(attempts, start, until)
     in_window = [a for a in attempts if start <= a['started'] <= until]
@@ -704,7 +757,9 @@ def build(runtime, since=None, until=None, now=None):
                    'hours': round((until - start).total_seconds() / 3600, 2)},
         'process': {'current': {**{k: process.get(k) for k in ('pid', 'started_at', 'heartbeat_at', 'status', 'stopped_at')},
                                 # Measured against the window end, so a dated copy of the databases is not mistaken for a live one.
-                                'heartbeat_minutes_before_window_end': round((until - beat).total_seconds() / 60, 1) if beat else None},
+                                # Negative when the databases are newer than a pinned --until.
+                                'heartbeat_minutes_before_window_end': round((until - beat).total_seconds() / 60, 1) if beat else None,
+                                'heartbeat_after_window_end': bool(beat and beat > until)},
                     'recorded_interrupted_checks': [{'family': a['family'], 'check_started': iso(a['started']),
                                                      'recovered_at': iso(a['finished'])}
                                                     for a in in_window if a['outcome'] == 'interrupted'],
@@ -733,9 +788,12 @@ def render(report, gap_limit=8):
              f"Window {short_time(w['since'])} to {short_time(w['until'])} ({w['hours']} h). Read-only; nothing was run or changed."]
     p = report['process']
     cur = p['current']
+    beat_gap = cur['heartbeat_minutes_before_window_end']
+    beat_note = (f"{-beat_gap} min after the window end: the databases are newer than this pinned window" if cur['heartbeat_after_window_end']
+                 else f"{beat_gap} min before the window end")
     lines += ['', 'PROCESS AND INTERRUPTIONS',
               f"  collector pid {cur['pid']} status {cur['status']} started {short_time(cur['started_at'])}, last heartbeat {short_time(cur['heartbeat_at'])} "
-              f"({cur['heartbeat_minutes_before_window_end']} min before the window end; a recorded heartbeat is not proof the process is running now)",
+              f"({beat_note}; a recorded heartbeat is not proof the process is running now)",
               f"  service logs record {p['logs']['logged_process_starts']} process start(s), pids {p['logs']['pids']} (undated); "
               f"{p['logs']['relaunch_refusals']['count']} scheduled relaunches found the server already running"]
     for i in p['recorded_interrupted_checks']:
@@ -767,15 +825,20 @@ def render(report, gap_limit=8):
             lines.append(f"      GAP {g['missing_bars']} bar(s) {short_time(g['from_bar'] if len(g['from_bar']) > 10 else g['from_bar'] + 'T00:00')}"
                          f" .. {short_time(g['to_bar'] if len(g['to_bar']) > 10 else g['to_bar'] + 'T00:00')}: {', '.join(g['causes'])}"
                          + (f" {g['failed_checks']}" if g['failed_checks'] else '')
+                         + (f" classes {g['failure_classes']}" if g['failure_classes'] else '')
                          + (f" e.g. {g['top_messages'][0]['message']}" if g['top_messages'] else ''))
         if len(f['gaps']) > gap_limit:
             lines.append(f"      ... {len(f['gaps']) - gap_limit} more gaps (see --json)")
         if f['accounts_with_no_recorded_bar']:
             lines.append(f"      accounts with no recorded bar in the window: {', '.join(f['accounts_with_no_recorded_bar'])}")
     hold = report['held_accounts']['hourly_quality']
+    live = ' (live file, written after the window end)' if hold['observed_after_window_end'] else ''
     lines += ['', 'HELD ACCOUNTS',
-              f"  hourly lab holds as of {short_time(hold['observed_at'])}: "
-              + (', '.join(f'{k} ({v})' for k, v in hold['holds'].items()) or 'none')]
+              f"  hourly lab readiness holds as of {short_time(hold['observed_at'])}{live}: "
+              + (', '.join(f'{k} ({v})' for k, v in hold['readiness_holds'].items()) or 'none')]
+    if hold['market_closed_or_stale']:
+        lines.append(f"  {len(hold['market_closed_or_stale'])} more symbol(s) show only a market-closed-or-stale state; "
+                     'the stored reason does not separate a closed market from stale data, so compare with the calendar')
     for family, n in report['held_accounts']['held_checks_by_family'].items():
         if n:
             lines.append(f"  {family}: {n} check(s) rejected the data (every account of that family is held together)")
