@@ -30,6 +30,13 @@ ASSETS = {t:{'symbol':t,'group':g,'cost_bps':30 if g=='Crypto' else 6,
              'instrument':'spot reference' if g=='Crypto' else 'exchange-traded fund',
              'calendar':'24/7' if g=='Crypto' else 'US regular session'} for g,ts in GROUPS.items() for t in ts}
 VERSION = 'hourly-v1'
+NO_SOURCE_DATA = 'No source data'
+
+
+class NoSourceData(Exception):
+    """The provider returned nothing for any asset: a failed check, not an accepted one."""
+
+
 UNSUPPORTED = ['Direct futures (contract rolls, margin and settlement required)',
                'Options (expiry, strike, multiplier and bid/ask chain required)',
                'Direct forex (venue spreads, rollover and funding required)',
@@ -54,7 +61,8 @@ def completed_prices(series, crypto, now=None):
         valid=(local.dayofweek<5)&((local.hour*60+local.minute)>=570)&((local.hour*60+local.minute)<960)
         s=s.loc[valid];local=local[valid];ends=ends[valid]
         session_end=(local.normalize()+pd.Timedelta(hours=16)).tz_convert('UTC')
-        ends=pd.DatetimeIndex([min(a,b) for a,b in zip(ends,session_end)])
+        # tz keeps the index aware when no bar is left; a naive empty index made the comparison below raise.
+        ends=pd.DatetimeIndex([min(a,b) for a,b in zip(ends,session_end)],tz='UTC')
     s.index=ends
     s=s.loc[s.index<=now-pd.Timedelta(minutes=5)]
     return s.where(np.isfinite(s)&(s>0))
@@ -241,11 +249,14 @@ class MarketLab:
         for symbol,asset in ASSETS.items():
             if should_pause():
                 return 'Paused; hourly scan stopped'
-            if symbol not in raw:
-                held[symbol]='No source data';continue
+            # A symbol whose request failed arrives as an all-NaN column (every symbol, in a total outage).
+            # It is held like an absent one; the symbols after it are still processed.
+            column=raw[symbol].dropna() if symbol in raw else None
+            if column is None or column.empty:
+                held[symbol]=NO_SOURCE_DATA;continue
             # Drop union-calendar rows absent for this instrument before applying
             # indicators. Explicit missing source observations remain unavailable.
-            s=completed_prices(raw[symbol].dropna(),asset['group']=='Crypto',now)
+            s=completed_prices(column,asset['group']=='Crypto',now)
             if not continuous_recent(s,asset['group']=='Crypto'):
                 held[symbol]='Needs 200 valid completed hourly bars';continue
             if pd.Timestamp(now)-s.index[-1]>pd.Timedelta(minutes=100):
@@ -276,6 +287,11 @@ class MarketLab:
                 updated+=1
         self.message=f'{updated} experiment observations processed; {len(held)} assets held.'
         (self.root/'quality.json').write_text(json.dumps({'observed_at':now.isoformat(),'holds':held}),encoding='utf-8')
+        if not updated and held and len(held)==len(ASSETS) and set(held.values())=={NO_SOURCE_DATA}:
+            # Nothing was evaluated because the provider gave nothing: keep it a failed check so the
+            # scheduler's retry backoff and the failure counters see it as they did before.
+            self.message='Provider returned no source data for any asset; previous records preserved.'
+            raise NoSourceData(self.message)
         return self.message
 
     def status(self):

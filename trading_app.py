@@ -11,6 +11,7 @@ import socket
 import sys
 import threading
 import time
+import traceback
 import webbrowser
 from urllib.parse import urlsplit, parse_qs
 import research_import.routes as research_routes
@@ -32,6 +33,38 @@ def research_payload():
     keys={'tier','title','subtitle','body','rules','metrics','metric_note','robust','caveat',
           'readings','source','killer','backtest_path','prior'}
     return [{k:v for k,v in p.items() if k in keys} for p in panels]
+
+
+FAULT_SITE_CHARS=160
+
+
+def fault_site(exc, frames=3, limit=FAULT_SITE_CHARS):
+    """Where an unexpected exception was raised, for the stored check message. Strictly best effort.
+
+    The innermost few frames in this project's own files, as file name, line and function, innermost
+    first, at most `limit` characters (whole frames while they fit, else the first one cut). No exception
+    text, source line, local variable or directory is read, and separator and control characters in the
+    names are replaced. Any ordinary failure while locating the site returns '' so the caller keeps the
+    original error outcome and message.
+    """
+    plain=lambda text:''.join(c if c.isalnum() or c in '._<>-' else '?' for c in str(text))
+    try:
+        parts=[]
+        for f in reversed(traceback.extract_tb(exc.__traceback__)):
+            path=Path(f.filename)
+            if path.is_absolute() and path.resolve().parent==ROOT:
+                parts.append(f'{plain(path.name)}:{int(f.lineno or 0)} {plain(f.name)}')
+            if len(parts)==frames:
+                break
+        site=''
+        for part in parts:
+            joined=f'{site} <- {part}' if site else part
+            if len(joined)>limit:
+                return joined[:limit] if not site else site
+            site=joined
+        return site
+    except Exception:
+        return ''
 
 
 class Controller:
@@ -141,12 +174,19 @@ class Controller:
             return 'skipped', 'Hourly lab not enabled.'
         if should_pause():
             return 'paused', 'Paused; hourly scan not started'
+        from market_lab import NoSourceData
         try:
             self.lab.message = 'Checking hourly markets…'
             message = self.lab.cycle(should_pause=should_pause)
             return ('paused' if message.startswith('Paused') else 'ok'), message
+        except NoSourceData as exc:
+            self.lab.message=str(exc)
+            return 'held', self.lab.message
         except Exception as exc:
-            self.lab.message=f'Hourly refresh held ({type(exc).__name__}); previous records preserved.'
+            # The stored message used to be the class name alone, which hid where a TypeError came from.
+            site=fault_site(exc)
+            self.lab.message=(f'Hourly refresh held ({type(exc).__name__}); previous records preserved.'
+                              +(f' Raised at {site}.' if site else ''))
             return 'error', self.lab.message
 
     def status(self):
