@@ -84,17 +84,18 @@ def further_bars(c, future, per_session=None):
       ordinary_session_equivalent_bars
                                   sessions still needed times an ordinary session, a conditional figure that early
                                   closes can undercut. It is not a bound.
-    A session still open that is matched so far in full costs only its remaining bars; a pending session that
-    already lost a bar cannot complete. After a missed trailing bar the first further matched bar is a new anchor
+    A session still open that is matched so far in full costs only its remaining bars, less any bar both accounts already
+    recorded before it was due; a pending session that already lost a bar cannot complete. After a missed trailing bar the first further matched bar is a new anchor
     and adds no return interval.
     """
     sessions_left = max(0, c['need']['sessions'] - c['have']['sessions'])
     intervals_left = max(0, c['need']['intervals'] - c['have']['intervals'])
     anchor = 0 if (not intervals_left or c.get('continues_at_pin')) else 1
     for_intervals = intervals_left + anchor if intervals_left else 0
-    pending = sorted((p['session'], max(0, p['bars_in_session'] - p['due_bars'])) for p in c.get('pending_sessions', [])
-                     if p['matched_so_far_in_full'])
-    ahead = pending + list(future)
+    pending = sorted((p['session'], max(0, p['bars_in_session'] - p['due_bars'] - p.get('matched_early_bars', 0)))
+                     for p in c.get('pending_sessions', []) if p['matched_so_far_in_full'])
+    listed = {p['session'] for p in c.get('pending_sessions', [])}       # a session with no due bar yet is pending here and not also a future one
+    ahead = pending + [item for item in future if item[0] not in listed]
     lower = path = path_last = None
     if len(ahead) >= sessions_left:
         costs = sorted(bars for _, bars in ahead)[:sessions_left]

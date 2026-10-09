@@ -644,6 +644,24 @@ def compare(kind, strategy, reference, data, expected, start, until, table=None)
                 'matched_due_bars': sum(1 for label in info['due'] if label in common_set),
                 'matched_so_far_in_full': all(label in common_set for label in info['due'])}
                for day, info in table.items() if info['end_clipped'] and not info['start_clipped']]
+    # A bar both accounts recorded before it was due (due = ready + grace, and a bar is usually recorded soon after it is ready) is
+    # already in hand, so an unfinished session does not owe it again. It can sit in a pending session or in one with no due bar yet,
+    # which the table does not list.
+    due_all = {label for info in table.values() for label in info['due']}
+    early = {}
+    for label in common:
+        if label not in due_all and key_time(label) >= start:
+            early.setdefault(session_of(kind, label), []).append(label)
+    for entry in pending:
+        entry['matched_early_bars'] = sum(1 for label in early.pop(entry['session'], []) if label in table[entry['session']]['labels'])
+    for day, labels in sorted(early.items()):
+        if day in table:
+            continue            # a start-clipped session, or one the window finished: nothing is pending there
+        full = [label for label, _ in full_session(kind, day)]
+        held = [label for label in labels if label in full]
+        if held:
+            pending.append({'session': day, 'bars_in_session': len(full), 'due_bars': 0, 'matched_due_bars': 0,
+                            'matched_so_far_in_full': True, 'matched_early_bars': len(held)})
     result = {'pair': strategy['pair'], 'kind': kind, 'strategy': strategy['id'], 'reference': reference['id'],
               'pending_sessions': pending,
               # True when the last matched bar is the last bar the window expects: the next matched bar then extends the run and adds a

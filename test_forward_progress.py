@@ -94,7 +94,7 @@ class GateArithmetic(Fixture):
         # Bars ending 13:45, 14:00, 14:15, 14:30 and 14:45Z are due (end + 2 min ready + 5 min grace <= 15:00Z): 5 of 26.
         pending = cov.build(self.rt.root, since=since, until=until, now=until)['comparisons'][0]['pending_sessions']
         self.assertEqual(pending, [{'session': '2026-09-23', 'bars_in_session': 26, 'due_bars': 5, 'matched_due_bars': 5,
-                                    'matched_so_far_in_full': True}])
+                                    'matched_early_bars': 0, 'matched_so_far_in_full': True}])
         self.assertEqual(row['complete_matched_sessions'], 2)   # Monday and Tuesday
         # 18 sessions still needed: Wednesday costs its 21 remaining bars, the other 17 cost 26 each = 21 + 442.
         # Path: Wednesday's 21 remaining bars + 17 ordinary sessions (09-24 .. 10-16) = 463. Lower bound: the 18 cheapest options are
@@ -127,6 +127,44 @@ class GateArithmetic(Fixture):
         self.assertEqual((row['further']['next_sessions_path_bars'], row['further']['minimum_further_matched_bars_per_account']), (18 * 24, 18 * 24))
         self.assertEqual(row['further']['ordinary_session_equivalent_bars'], 19 * 24)      # conditional figure, deliberately not the same
         self.assertEqual(row['further']['bars_per_session'], 24)
+
+    def early_pair(self, since, until, early):
+        """Both accounts record every due bar and also the `early` bars, which were recorded but are still inside their grace at the pin."""
+        labels = labels_15m(since, until)
+        for rel in (TREND, HOLD):
+            self.rt.book(rel, stock_obs(labels + early))
+        self.rt.heartbeat(begin=since, end=until)
+
+    def test_a_bar_recorded_but_not_yet_due_at_the_pin_is_not_owed_again(self):
+        since = THREE_DAYS[0]
+        until = z(2026, 9, 23, 15, 5)       # 11:05 ET on Wednesday
+        # The bar ending 15:00Z is ready at 15:02Z, both books saw it at 15:02Z, but it is only due at 15:07Z (grace 5): not due at the pin.
+        # Bars ending 13:45 .. 14:45Z are due (5 of 26), so Wednesday has 21 bars not yet due, one of them already matched.
+        self.early_pair(since, until, ['2026-09-23T15:00:00+00:00'])
+        report = self.progress(since, until)
+        row = report['comparisons'][0]
+        pending = cov.build(self.rt.root, since=since, until=until, now=until)['comparisons'][0]['pending_sessions']
+        self.assertEqual(pending, [{'session': '2026-09-23', 'bars_in_session': 26, 'due_bars': 5, 'matched_due_bars': 5,
+                                    'matched_early_bars': 1, 'matched_so_far_in_full': True}])
+        self.assertEqual(row['complete_matched_sessions'], 2)
+        # 26 - 5 due - 1 already matched = 20 bars left on Wednesday. Path: 20 + 17 ordinary sessions (09-24 .. 10-16) = 462.
+        # Lower bound: three 14-bar early closes, Wednesday's 20 and fourteen 26-bar sessions = 42 + 20 + 364 = 426.
+        self.assertEqual(row['further']['next_sessions_path_bars'], 462)
+        self.assertEqual(row['further']['minimum_further_matched_bars_per_account'], 426)
+
+    def test_a_session_whose_only_recorded_bar_is_not_yet_due_is_counted_once(self):
+        since = THREE_DAYS[0]
+        until = z(2026, 9, 23, 13, 50)      # the first Wednesday bar ends 13:45Z, ready 13:47Z, due 13:52Z: no Wednesday bar is due
+        self.early_pair(since, until, ['2026-09-23T13:45:00+00:00'])
+        report = self.progress(since, until)
+        row = report['comparisons'][0]
+        self.assertEqual(row['complete_matched_sessions'], 2)            # Monday and Tuesday
+        self.assertEqual(row['further']['sessions_left'], 18)
+        # Wednesday is not in the window's session table, but it holds one matched bar: 25 left there, once, not again as a future session.
+        # Path: 25 + 17 ordinary sessions (09-24 .. 10-16) = 467. Lower bound: 42 + 25 + 14 * 26 = 431.
+        self.assertEqual(row['further']['next_sessions_path_bars'], 467)
+        self.assertEqual(row['further']['minimum_further_matched_bars_per_account'], 431)
+        self.assertEqual(row['further']['next_sessions_path_last_session'], '2026-10-16')
 
     def test_met_gates_need_nothing_and_do_not_claim_a_result(self):
         row = {'need': {'sessions': 20, 'intervals': 100, 'fills': 10}, 'have': {'sessions': 25, 'intervals': 120, 'fills': 12},
